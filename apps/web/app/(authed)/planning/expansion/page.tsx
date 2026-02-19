@@ -1,7 +1,5 @@
-import { requireMe } from "@/lib/server/auth";
-import { PlanningClient } from "@/components/modules/planning/planning-client";
+import { redirect } from "next/navigation";
 
-export default async function PlanningExpansionPage() {
-    await requireMe(["ADMIN", "OPS", "EXEC"]);
-    return <PlanningClient mode="expansion" />;
+export default function PlanningExpansionLegacyPage() {
+    redirect("/planning/expansion-analysis");
 }

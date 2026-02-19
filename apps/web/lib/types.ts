@@ -1,4 +1,11 @@
-export type Role = "ADMIN" | "OPS" | "EXEC";
+export type Role =
+    | "ADMIN"
+    | "OPS"
+    | "EXEC"
+    | "SUPER_ADMIN"
+    | "MANAGEMENT"
+    | "OPERATOR"
+    | "DISTRIBUTOR";
 
 export type Me = {
     id: number;
