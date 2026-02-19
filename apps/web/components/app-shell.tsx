@@ -6,18 +6,22 @@ import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
     Bell,
-    BarChart3,
+    Boxes,
+    ClipboardList,
     Database,
+    Globe,
     LayoutDashboard,
     LineChart,
     LogOut,
     MapPin,
+    Map,
     Menu,
+    PieChart,
     Route,
     ScrollText,
-    Settings,
     ShieldCheck,
     Sliders,
+    TrendingUp,
     Truck,
     Users,
 } from "lucide-react";
@@ -32,84 +36,150 @@ type NavItem = {
     roles: Me["role"][];
 };
 
-const NAV: NavItem[] = [
+type NavSection = {
+    id: string;
+    label: string;
+    items: NavItem[];
+};
+
+const NAV_SECTIONS: NavSection[] = [
     {
-        href: "/dashboard",
+        id: "dashboard",
         label: "Dashboard",
-        icon: <LayoutDashboard className="h-4 w-4" />,
-        roles: ["ADMIN", "OPS", "EXEC", "SUPER_ADMIN"],
+        items: [
+            {
+                href: "/dashboard",
+                label: "Dashboard",
+                icon: <LayoutDashboard className="h-4 w-4" />,
+                roles: ["ADMIN", "OPS", "EXEC", "SUPER_ADMIN"],
+            },
+        ],
     },
     {
-        href: "/planning/site-selection",
-        label: "Site Selection",
-        icon: <MapPin className="h-4 w-4" />,
-        roles: ["ADMIN", "OPS", "EXEC"],
+        id: "planning",
+        label: "Planning",
+        items: [
+            {
+                href: "/planning/site-selection",
+                label: "Site Selection",
+                icon: <MapPin className="h-4 w-4" />,
+                roles: ["ADMIN", "OPS", "EXEC", "SUPER_ADMIN"],
+            },
+            {
+                href: "/planning/expansion-analysis",
+                label: "Expansion Analysis",
+                icon: <Route className="h-4 w-4" />,
+                roles: ["ADMIN", "OPS", "EXEC", "SUPER_ADMIN"],
+            },
+            {
+                href: "/planning/market-analysis",
+                label: "Market Analysis",
+                icon: <LineChart className="h-4 w-4" />,
+                roles: ["ADMIN", "OPS", "EXEC", "SUPER_ADMIN"],
+            },
+        ],
     },
     {
-        href: "/planning/expansion-analysis",
-        label: "Expansion Analysis",
-        icon: <Route className="h-4 w-4" />,
-        roles: ["ADMIN", "OPS", "EXEC"],
-    },
-    {
-        href: "/planning/market-analysis",
-        label: "Market Analysis",
-        icon: <LineChart className="h-4 w-4" />,
-        roles: ["ADMIN", "OPS", "EXEC"],
-    },
-    {
-        href: "/admin/users",
-        label: "User Management",
-        icon: <Users className="h-4 w-4" />,
-        roles: ["SUPER_ADMIN"],
-    },
-    {
-        href: "/admin/rbac",
-        label: "Role & Access Control",
-        icon: <ShieldCheck className="h-4 w-4" />,
-        roles: ["SUPER_ADMIN"],
-    },
-    {
-        href: "/admin/master-data",
-        label: "Master Data",
-        icon: <Database className="h-4 w-4" />,
-        roles: ["SUPER_ADMIN"],
-    },
-    {
-        href: "/admin/thresholds",
-        label: "Threshold Settings",
-        icon: <Sliders className="h-4 w-4" />,
-        roles: ["SUPER_ADMIN"],
-    },
-    {
-        href: "/admin/alerts",
-        label: "Alert Configuration",
-        icon: <Bell className="h-4 w-4" />,
-        roles: ["SUPER_ADMIN"],
-    },
-    {
-        href: "/admin/logs",
-        label: "System Logs",
-        icon: <ScrollText className="h-4 w-4" />,
-        roles: ["SUPER_ADMIN"],
-    },
-    {
-        href: "/operations",
+        id: "operations",
         label: "Operations",
-        icon: <Truck className="h-4 w-4" />,
-        roles: ["ADMIN", "OPS"],
+        items: [
+            {
+                href: "/operations/global-overview",
+                label: "Global Operations Overview",
+                icon: <Globe className="h-4 w-4" />,
+                roles: ["ADMIN", "OPS", "SUPER_ADMIN"],
+            },
+            {
+                href: "/operations/shipments",
+                label: "All Shipments",
+                icon: <Truck className="h-4 w-4" />,
+                roles: ["ADMIN", "OPS", "SUPER_ADMIN"],
+            },
+            {
+                href: "/operations/inventory",
+                label: "All Inventory",
+                icon: <Boxes className="h-4 w-4" />,
+                roles: ["ADMIN", "OPS", "SUPER_ADMIN"],
+            },
+            {
+                href: "/operations/order-audit",
+                label: "Order Audit",
+                icon: <ClipboardList className="h-4 w-4" />,
+                roles: ["ADMIN", "OPS", "SUPER_ADMIN"],
+            },
+            {
+                href: "/operations/activity-log",
+                label: "Activity & System Log",
+                icon: <ScrollText className="h-4 w-4" />,
+                roles: ["ADMIN", "OPS", "SUPER_ADMIN"],
+            },
+        ],
     },
     {
-        href: "/executive",
+        id: "executive",
         label: "Executive",
-        icon: <BarChart3 className="h-4 w-4" />,
-        roles: ["ADMIN", "EXEC"],
+        items: [
+            {
+                href: "/executive/performance",
+                label: "Performance Overview",
+                icon: <TrendingUp className="h-4 w-4" />,
+                roles: ["ADMIN", "EXEC", "SUPER_ADMIN"],
+            },
+            {
+                href: "/executive/regional",
+                label: "Regional Performance",
+                icon: <Map className="h-4 w-4" />,
+                roles: ["ADMIN", "EXEC", "SUPER_ADMIN"],
+            },
+            {
+                href: "/executive/sales-summary",
+                label: "Sales Summary",
+                icon: <PieChart className="h-4 w-4" />,
+                roles: ["ADMIN", "EXEC", "SUPER_ADMIN"],
+            },
+        ],
     },
     {
-        href: "/management",
-        label: "Management",
-        icon: <Settings className="h-4 w-4" />,
-        roles: ["ADMIN"],
+        id: "administration",
+        label: "Administration",
+        items: [
+            {
+                href: "/admin/users",
+                label: "User Management",
+                icon: <Users className="h-4 w-4" />,
+                roles: ["SUPER_ADMIN"],
+            },
+            {
+                href: "/admin/rbac",
+                label: "Role & Access Control",
+                icon: <ShieldCheck className="h-4 w-4" />,
+                roles: ["SUPER_ADMIN"],
+            },
+            {
+                href: "/admin/master-data",
+                label: "Master Data",
+                icon: <Database className="h-4 w-4" />,
+                roles: ["SUPER_ADMIN"],
+            },
+            {
+                href: "/admin/thresholds",
+                label: "Threshold Settings",
+                icon: <Sliders className="h-4 w-4" />,
+                roles: ["SUPER_ADMIN"],
+            },
+            {
+                href: "/admin/alerts",
+                label: "Alert Configuration",
+                icon: <Bell className="h-4 w-4" />,
+                roles: ["SUPER_ADMIN"],
+            },
+            {
+                href: "/admin/logs",
+                label: "System Logs",
+                icon: <ScrollText className="h-4 w-4" />,
+                roles: ["SUPER_ADMIN"],
+            },
+        ],
     },
 ];
 
@@ -129,24 +199,12 @@ export function AppShell({ user, children }: { user: Me; children: React.ReactNo
     const [busy, setBusy] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
 
-    const items = useMemo(
-        () => NAV.filter((n) => n.roles.includes(user.role)),
-        [user.role],
-    );
-
-    const dashboardItems = useMemo(() => items.filter((i) => i.href === "/dashboard"), [items]);
-    const planningItems = useMemo(() => items.filter((i) => i.href.startsWith("/planning/")), [items]);
-    const adminItems = useMemo(() => items.filter((i) => i.href.startsWith("/admin/")), [items]);
-    const otherItems = useMemo(
-        () =>
-            items.filter(
-                (i) =>
-                    i.href !== "/dashboard" &&
-                    !i.href.startsWith("/planning/") &&
-                    !i.href.startsWith("/admin/"),
-            ),
-        [items],
-    );
+    const sections = useMemo(() => {
+        return NAV_SECTIONS.map((section) => ({
+            ...section,
+            items: section.items.filter((item) => item.roles.includes(user.role)),
+        })).filter((section) => section.items.length > 0);
+    }, [user.role]);
 
     async function logout() {
         setBusy(true);
@@ -171,59 +229,33 @@ export function AppShell({ user, children }: { user: Me; children: React.ReactNo
                 </div>
             </div>
 
-            <nav className="flex-1 space-y-0.5 px-3 py-3">
-                {[...dashboardItems, ...planningItems, ...adminItems, ...otherItems].map((n, idx, arr) => {
-                    const prev = arr[idx - 1];
-                    const showPlanningHeader =
-                        n.href.startsWith("/planning/") && (!prev || !prev.href.startsWith("/planning/"));
-                    const showAdminHeader =
-                        n.href.startsWith("/admin/") && (!prev || !prev.href.startsWith("/admin/"));
-                    const showOtherHeader =
-                        !n.href.startsWith("/planning/") &&
-                        !n.href.startsWith("/admin/") &&
-                        n.href !== "/dashboard" &&
-                        (!prev ||
-                            prev.href.startsWith("/planning/") ||
-                            prev.href.startsWith("/admin/") ||
-                            prev.href === "/dashboard");
-                    const active = pathname?.startsWith(n.href);
-
-                    return (
-                        <div key={n.href} className="space-y-1">
-                            {showPlanningHeader ? (
-                                <div className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
-                                    Planning
-                                </div>
-                            ) : null}
-
-                            {showAdminHeader ? (
-                                <div className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
-                                    Administration
-                                </div>
-                            ) : null}
-
-                            {showOtherHeader ? (
-                                <div className="px-3 pt-3 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
-                                    Modules
-                                </div>
-                            ) : null}
-
-                            <Link
-                                href={n.href}
-                                onClick={() => setMobileOpen(false)}
-                                className={cn(
-                                    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
-                                    active
-                                        ? "bg-blue-600 text-white font-medium"
-                                        : "text-slate-300 hover:bg-white/10 hover:text-white",
-                                )}
-                            >
-                                <span className="text-base leading-none text-slate-200">{n.icon}</span>
-                                {n.label}
-                            </Link>
+            <nav className="flex-1 space-y-3 px-3 py-3">
+                {sections.map((section) => (
+                    <div key={section.id} className="space-y-1">
+                        <div className="px-3 pt-2 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+                            {section.label}
                         </div>
-                    );
-                })}
+                        {section.items.map((item) => {
+                            const active = pathname?.startsWith(item.href);
+                            return (
+                                <Link
+                                    key={item.href}
+                                    href={item.href}
+                                    onClick={() => setMobileOpen(false)}
+                                    className={cn(
+                                        "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors",
+                                        active
+                                            ? "bg-blue-600 text-white font-medium"
+                                            : "text-slate-300 hover:bg-white/10 hover:text-white",
+                                    )}
+                                >
+                                    <span className="text-base leading-none text-slate-200">{item.icon}</span>
+                                    {item.label}
+                                </Link>
+                            );
+                        })}
+                    </div>
+                ))}
             </nav>
 
             <div className="border-t border-white/10 px-4 py-3">
