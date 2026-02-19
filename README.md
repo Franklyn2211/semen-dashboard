@@ -1,36 +1,69 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# CementOps (Demo)
 
-## Getting Started
+Single-repo demo app:
 
-First, run the development server:
+- Web: Next.js (App Router) + TypeScript + Tailwind + Leaflet + Recharts
+- API: Go (chi + pgxpool) + PostgreSQL
+- DB: migrations + idempotent seed auto-run on API start
+
+## Prereqs
+
+- Node.js 18+ (recommended 20+)
+- Go 1.22+
+- PostgreSQL (either Docker Compose below, or a managed DB with `DATABASE_URL`)
+
+## Quickstart (local with Docker Postgres)
+
+1) Start Postgres:
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+docker compose up -d postgres
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+If this fails on Windows, make sure Docker Desktop is installed and running. Otherwise, skip Docker and use a hosted Postgres by setting `DATABASE_URL`.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+2) Install deps:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm install
+```
 
-## Learn More
+3) Run API + Web together:
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+# PowerShell
+$env:DATABASE_URL='postgres://cementops:cementops@localhost:5432/cementops?sslmode=disable'
+npm run dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Open http://localhost:3000
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The API runs on http://127.0.0.1:8080 and automatically runs migrations + seed data on boot.
 
-## Deploy on Vercel
+## Quickstart (Replit / no Docker)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Set `DATABASE_URL` to your Replit Postgres connection string, then:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm install
+npm run dev
+```
+
+## Demo Accounts
+
+- ADMIN: `admin@cementops.local` / `admin123`
+- OPS: `ops@cementops.local` / `ops123`
+- EXEC: `exec@cementops.local` / `exec123`
+
+## Scripts
+
+- `npm run dev` : runs web + api concurrently
+- `npm run build` : builds the Next.js app
+- `npm run lint` : lints the Next.js app
+
+## Repo Layout
+
+- `apps/web` : Next.js app
+- `apps/api` : Go API
+- `db/migrations` : SQL migrations (goose)
+- `docker-compose.yml` : local Postgres
