@@ -1,7 +1,10 @@
 import { requireMe } from "@/lib/server/auth";
-import { ManagementClient } from "@/components/modules/management/management-client";
+import { redirect } from "next/navigation";
 
 export default async function ManagementPage() {
-    await requireMe(["ADMIN"]);
-    return <ManagementClient />;
+    const me = await requireMe(["MANAGEMENT", "SUPER_ADMIN"]);
+    if (me.role === "SUPER_ADMIN") {
+        redirect("/admin/master-data");
+    }
+    redirect("/dashboard");
 }

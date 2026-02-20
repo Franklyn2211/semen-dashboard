@@ -1,7 +1,4 @@
 export type Role =
-    | "ADMIN"
-    | "OPS"
-    | "EXEC"
     | "SUPER_ADMIN"
     | "MANAGEMENT"
     | "OPERATOR"

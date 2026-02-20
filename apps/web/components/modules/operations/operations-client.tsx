@@ -1,10 +1,12 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
+import { Input } from "@/components/ui/input";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 
 const OpsMap = dynamic(() => import("./operations-map"), { ssr: false });
@@ -25,10 +27,15 @@ type StockItem = {
 };
 
 type ReorderItem = {
-    distributorId: number;
-    distributorName: string;
+    warehouseId: number;
+    warehouseName: string;
+    cementType: string;
+    quantityTons: number;
+    leadTimeDays: number;
+    targetStockTons: number;
     urgency: "LOW" | "MED" | "HIGH";
     recommendedQuantityTons: number;
+    status: string;
 };
 
 type ShipmentSummary = {
@@ -46,16 +53,71 @@ type ShipmentDetail = {
     toDistributor: { id: number; name: string; lat: number; lng: number };
 };
 
+type OrderRequest = {
+    id: number;
+    status: string;
+    requestedAt: string;
+    cementType: string;
+    quantityTons: number;
+    distributor: { id: number; name: string };
+    approvedShipmentId?: number | null;
+};
+
 export function OperationsClient() {
     const [logistics, setLogistics] = useState<LogisticsMap | null>(null);
     const [stock, setStock] = useState<StockItem[]>([]);
     const [reorder, setReorder] = useState<ReorderItem[]>([]);
+    const [pendingOrders, setPendingOrders] = useState<OrderRequest[]>([]);
     const [shipments, setShipments] = useState<ShipmentSummary[]>([]);
     const [page, setPage] = useState(1);
     const [selectedShipment, setSelectedShipment] = useState<ShipmentSummary | null>(null);
     const [shipmentDetail, setShipmentDetail] = useState<ShipmentDetail | null>(null);
     const [statusBusy, setStatusBusy] = useState(false);
     const [statusError, setStatusError] = useState<string | null>(null);
+
+    const [orderBusyId, setOrderBusyId] = useState<number | null>(null);
+    const [orderError, setOrderError] = useState<string | null>(null);
+    const [orderReasonById, setOrderReasonById] = useState<Record<number, string>>({});
+
+    const refreshStock = useCallback(async () => {
+        try {
+            const r = await fetch("/api/ops/stock");
+            const d = await r.json();
+            setStock((d.items ?? []) as StockItem[]);
+        } catch {
+            setStock([]);
+        }
+    }, []);
+
+    const refreshReorder = useCallback(async () => {
+        try {
+            const r = await fetch("/api/ops/prediction/reorder");
+            const d = await r.json();
+            setReorder((d.items ?? []) as ReorderItem[]);
+        } catch {
+            setReorder([]);
+        }
+    }, []);
+
+    const refreshShipments = useCallback(async () => {
+        try {
+            const r = await fetch(`/api/ops/shipments?page=${page}&pageSize=10`);
+            const d = await r.json();
+            setShipments((d.items ?? []) as ShipmentSummary[]);
+        } catch {
+            setShipments([]);
+        }
+    }, [page]);
+
+    const refreshPendingOrders = useCallback(async () => {
+        try {
+            const r = await fetch("/api/ops/orders?status=PENDING");
+            const d = await r.json();
+            setPendingOrders((d.items ?? []) as OrderRequest[]);
+        } catch {
+            setPendingOrders([]);
+        }
+    }, []);
 
     useEffect(() => {
         fetch("/api/ops/logistics/map")
@@ -65,25 +127,20 @@ export function OperationsClient() {
     }, []);
 
     useEffect(() => {
-        fetch("/api/ops/stock")
-            .then((r) => r.json())
-            .then((d) => setStock((d.items ?? []) as StockItem[]))
-            .catch(() => setStock([]));
-    }, []);
+        refreshStock();
+    }, [refreshStock]);
 
     useEffect(() => {
-        fetch("/api/ops/prediction/reorder")
-            .then((r) => r.json())
-            .then((d) => setReorder((d.items ?? []) as ReorderItem[]))
-            .catch(() => setReorder([]));
-    }, []);
+        refreshReorder();
+    }, [refreshReorder]);
 
     useEffect(() => {
-        fetch(`/api/ops/shipments?page=${page}&pageSize=10`)
-            .then((r) => r.json())
-            .then((d) => setShipments((d.items ?? []) as ShipmentSummary[]))
-            .catch(() => setShipments([]));
-    }, [page]);
+        refreshPendingOrders();
+    }, [refreshPendingOrders]);
+
+    useEffect(() => {
+        refreshShipments();
+    }, [refreshShipments]);
 
     useEffect(() => {
         if (!selectedShipment) return;
@@ -122,6 +179,48 @@ export function OperationsClient() {
         }
     }
 
+    async function approveOrder(id: number) {
+        setOrderBusyId(id);
+        setOrderError(null);
+        try {
+            const reason = (orderReasonById[id] ?? "").trim();
+            const res = await fetch(`/api/ops/orders/${id}/approve`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ reason }),
+            });
+            if (!res.ok) {
+                const d = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+                setOrderError(d?.error?.message ?? "Failed to approve order");
+                return;
+            }
+            await Promise.all([refreshPendingOrders(), refreshShipments(), refreshStock(), refreshReorder()]);
+        } finally {
+            setOrderBusyId(null);
+        }
+    }
+
+    async function rejectOrder(id: number) {
+        setOrderBusyId(id);
+        setOrderError(null);
+        try {
+            const reason = (orderReasonById[id] ?? "").trim();
+            const res = await fetch(`/api/ops/orders/${id}/reject`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ reason }),
+            });
+            if (!res.ok) {
+                const d = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+                setOrderError(d?.error?.message ?? "Failed to reject order");
+                return;
+            }
+            await Promise.all([refreshPendingOrders(), refreshReorder()]);
+        } finally {
+            setOrderBusyId(null);
+        }
+    }
+
     const urgencyBadge = (u: string) => {
         if (u === "HIGH") return <Badge variant="danger">HIGH</Badge>;
         if (u === "MED") return <Badge variant="warning">MED</Badge>;
@@ -129,19 +228,31 @@ export function OperationsClient() {
     };
 
     const statusBadge = (s: string) => {
-        if (s === "DELIVERED") return <Badge variant="success">DELIVERED</Badge>;
-        if (s === "IN_TRANSIT") return <Badge variant="default">IN TRANSIT</Badge>;
+        if (s === "COMPLETED") return <Badge variant="success">COMPLETED</Badge>;
+        if (s === "ON_DELIVERY") return <Badge variant="default">ON DELIVERY</Badge>;
+        if (s === "DELAYED") return <Badge variant="warning">DELAYED</Badge>;
+        if (s === "SCHEDULED") return <Badge variant="secondary">SCHEDULED</Badge>;
         if (s === "CANCELLED") return <Badge variant="danger">CANCELLED</Badge>;
-        return <Badge variant="secondary">PLANNED</Badge>;
+        return <Badge variant="secondary">UNKNOWN</Badge>;
+    };
+
+    const canTransition = (from: string, to: string) => {
+        if (from === to) return true;
+        const allowedNext: Record<string, Record<string, boolean>> = {
+            SCHEDULED: { ON_DELIVERY: true, DELAYED: true, COMPLETED: true },
+            ON_DELIVERY: { DELAYED: true, COMPLETED: true },
+            DELAYED: { ON_DELIVERY: true, COMPLETED: true },
+            COMPLETED: {},
+        };
+        return Boolean(allowedNext[from]?.[to]);
     };
 
     return (
-        <div className="space-y-5">
-            {/* Page header */}
-            <div>
-                <h1 className="text-lg font-semibold">Operations Center</h1>
-                <p className="text-sm text-muted-foreground">Monitor logistik, stok gudang, reorder, dan pengiriman secara real-time.</p>
-            </div>
+        <div className="space-y-6">
+            <PageHeader
+                title="Operations Center"
+                description="Monitor logistik, stok gudang, reorder, dan pengiriman secara real-time."
+            />
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
                 <div className="lg:col-span-2 space-y-4">
@@ -199,7 +310,7 @@ export function OperationsClient() {
                                         }`}
                                 >
                                     <div>
-                                        <div className="text-sm font-medium">{r.distributorName}</div>
+                                        <div className="text-sm font-medium">{r.warehouseName} · {r.cementType}</div>
                                         <div className="text-xs text-muted-foreground">
                                             Rekomendasi: {Number(r.recommendedQuantityTons).toFixed(0)} ton
                                         </div>
@@ -207,6 +318,66 @@ export function OperationsClient() {
                                     {urgencyBadge(r.urgency)}
                                 </div>
                             ))}
+                        </CardContent>
+                    </Card>
+
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>Order Requests</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            {pendingOrders.length === 0 ? (
+                                <div className="py-4 text-center text-sm text-muted-foreground">Tidak ada order pending.</div>
+                            ) : null}
+
+                            {pendingOrders.map((o) => (
+                                <div key={o.id} className="rounded-lg border border-border p-3 space-y-2">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0">
+                                            <div className="text-sm font-medium truncate">
+                                                #{o.id} · {o.distributor?.name}
+                                            </div>
+                                            <div className="text-xs text-muted-foreground">
+                                                <Badge variant="secondary" className="mr-2">{o.cementType}</Badge>
+                                                {Number(o.quantityTons).toLocaleString("id")} ton · {new Date(o.requestedAt).toLocaleString("id-ID")}
+                                            </div>
+                                        </div>
+                                        <Badge variant="secondary">{o.status}</Badge>
+                                    </div>
+
+                                    <Input
+                                        placeholder="Reason (optional)"
+                                        value={orderReasonById[o.id] ?? ""}
+                                        onChange={(e) =>
+                                            setOrderReasonById((prev) => ({ ...prev, [o.id]: e.target.value }))
+                                        }
+                                    />
+
+                                    <div className="flex items-center gap-2">
+                                        <Button
+                                            size="xs"
+                                            variant="success"
+                                            disabled={orderBusyId !== null}
+                                            onClick={() => approveOrder(o.id)}
+                                        >
+                                            Approve
+                                        </Button>
+                                        <Button
+                                            size="xs"
+                                            variant="danger"
+                                            disabled={orderBusyId !== null}
+                                            onClick={() => rejectOrder(o.id)}
+                                        >
+                                            Reject
+                                        </Button>
+                                        {orderBusyId === o.id ? (
+                                            <div className="text-xs text-muted-foreground">Processing…</div>
+                                        ) : null}
+                                    </div>
+                                </div>
+                            ))}
+
+                            {orderError ? <div className="text-xs text-red-600">{orderError}</div> : null}
                         </CardContent>
                     </Card>
 
@@ -261,16 +432,16 @@ export function OperationsClient() {
                                         {statusBadge(selectedShipment.status)}
                                     </div>
                                     <div className="flex flex-wrap gap-1.5">
-                                        {["PLANNED", "IN_TRANSIT", "DELIVERED", "CANCELLED"].map((s) => (
+                                        {["SCHEDULED", "ON_DELIVERY", "DELAYED", "COMPLETED"].map((s) => (
                                             <Button
                                                 key={s}
                                                 size="xs"
                                                 variant={
                                                     selectedShipment.status === s
-                                                        ? s === "DELIVERED" ? "success" : s === "CANCELLED" ? "danger" : "default"
+                                                        ? s === "COMPLETED" ? "success" : s === "DELAYED" ? "danger" : "default"
                                                         : "outline"
                                                 }
-                                                disabled={statusBusy || selectedShipment.status === s}
+                                                disabled={statusBusy || selectedShipment.status === s || !canTransition(selectedShipment.status, s)}
                                                 onClick={() => updateShipmentStatus(selectedShipment.id, s)}
                                             >
                                                 {s}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pencil } from "lucide-react";
 import { AdminPageHeader } from "@/components/admin/admin-page-header";
 import { FiltersBar } from "@/components/admin/filters-bar";
@@ -12,33 +12,6 @@ import { Input } from "@/components/ui/input";
 import { Form, FormControl, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import type { ThresholdSetting } from "@/lib/types/admin";
 
-const MOCK_THRESHOLDS: ThresholdSetting[] = [
-    {
-        id: "thr-1",
-        warehouseId: "wh-1",
-        warehouseName: "Cikarang Warehouse",
-        product: "Cement",
-        minStock: 500,
-        safetyStock: 800,
-        warningLevel: 400,
-        criticalLevel: 250,
-        leadTimeDays: 3,
-        updatedAt: "2026-02-15 09:20",
-    },
-    {
-        id: "thr-2",
-        warehouseId: "wh-2",
-        warehouseName: "Priok Depot",
-        product: "Cement",
-        minStock: 420,
-        safetyStock: 700,
-        warningLevel: 350,
-        criticalLevel: 220,
-        leadTimeDays: 4,
-        updatedAt: "2026-02-12 10:45",
-    },
-];
-
 type FormState = {
     minStock: string;
     safetyStock: string;
@@ -48,7 +21,7 @@ type FormState = {
 };
 
 export function ThresholdsView() {
-    const [thresholds, setThresholds] = useState<ThresholdSetting[]>(MOCK_THRESHOLDS);
+    const [thresholds, setThresholds] = useState<ThresholdSetting[]>([]);
     const [search, setSearch] = useState("");
     const [formOpen, setFormOpen] = useState(false);
     const [editing, setEditing] = useState<ThresholdSetting | null>(null);
@@ -60,6 +33,20 @@ export function ThresholdsView() {
         leadTimeDays: "",
     });
     const [formError, setFormError] = useState<string | null>(null);
+
+    useEffect(() => {
+        async function load() {
+            try {
+                const res = await fetch("/api/admin/thresholds");
+                if (!res.ok) throw new Error("Failed to load thresholds");
+                const json = (await res.json()) as { items: ThresholdSetting[] };
+                setThresholds(json.items ?? []);
+            } catch (err) {
+                setFormError(err instanceof Error ? err.message : "Failed to load thresholds");
+            }
+        }
+        void load();
+    }, []);
 
     const filteredThresholds = useMemo(() => {
         return thresholds.filter((item) =>
@@ -80,7 +67,7 @@ export function ThresholdsView() {
         setFormOpen(true);
     };
 
-    const saveThreshold = () => {
+    const saveThreshold = async () => {
         const minStock = Number(formState.minStock);
         const safetyStock = Number(formState.safetyStock);
         const warningLevel = Number(formState.warningLevel);
@@ -92,17 +79,30 @@ export function ThresholdsView() {
         }
 
         if (!editing) return;
-        const updated: ThresholdSetting = {
-            ...editing,
-            minStock,
-            safetyStock,
-            warningLevel,
-            criticalLevel,
-            leadTimeDays: Number(formState.leadTimeDays),
-            updatedAt: new Date().toISOString().slice(0, 16).replace("T", " "),
-        };
-        setThresholds((prev) => prev.map((item) => (item.id === editing.id ? updated : item)));
-        setFormOpen(false);
+        try {
+            const res = await fetch(`/api/admin/thresholds/${editing.id}`,
+                {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        minStock,
+                        safetyStock,
+                        warningLevel,
+                        criticalLevel,
+                        leadTimeDays: Number(formState.leadTimeDays) || 3,
+                    }),
+                },
+            );
+            if (!res.ok) throw new Error("Failed to save thresholds");
+            const reload = await fetch("/api/admin/thresholds");
+            if (reload.ok) {
+                const json = (await reload.json()) as { items: ThresholdSetting[] };
+                setThresholds(json.items ?? []);
+            }
+            setFormOpen(false);
+        } catch (err) {
+            setFormError(err instanceof Error ? err.message : "Failed to save thresholds");
+        }
     };
 
     return (

@@ -1,8 +1,8 @@
-export default function Page() {
-    return (
-        <div className=\"space-y-2\">
-            <h1 className=\"text-xl font-semibold\">Global Operations Overview</h1>
-            <p className=\"text-sm text-muted-foreground\">Placeholder page for global operations monitoring.</p>
-        </div>
-    );
+import { requireMe } from "@/lib/server/auth";
+import { OpsOverviewClient } from "@/components/modules/operations/overview-client";
+
+export default async function Page() {
+    await requireMe(["OPERATOR", "SUPER_ADMIN", "MANAGEMENT"]);
+    return <OpsOverviewClient />;
 }
+

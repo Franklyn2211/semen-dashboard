@@ -18,44 +18,6 @@ const ROLE_OPTIONS: { value: AdminRole; label: string }[] = [
     { value: "DISTRIBUTOR", label: "Distributor" },
 ];
 
-const MOCK_USERS = [
-    { id: "usr-1", name: "Nadia Putri" },
-    { id: "usr-2", name: "Raka Pratama" },
-    { id: "usr-3", name: "Dewi Ananda" },
-];
-
-const MOCK_ALERTS: AlertConfig[] = [
-    {
-        id: "alert-1",
-        name: "Stock Critical",
-        description: "Trigger when stock drops below critical threshold.",
-        enabled: true,
-        severity: "High",
-        recipients: { roles: ["SUPER_ADMIN", "MANAGEMENT"], users: ["usr-1"] },
-        channels: { inApp: true, email: true },
-        params: { threshold: 20, unit: "%" },
-    },
-    {
-        id: "alert-2",
-        name: "Shipment Delay",
-        description: "Notify if delivery is delayed beyond SLA.",
-        enabled: true,
-        severity: "Medium",
-        recipients: { roles: ["OPERATOR"], users: ["usr-2"] },
-        channels: { inApp: true, email: false },
-        params: { threshold: 180, unit: "minutes" },
-    },
-    {
-        id: "alert-3",
-        name: "Demand Spike",
-        description: "Detect sudden demand increases in a region.",
-        enabled: false,
-        severity: "Low",
-        recipients: { roles: ["MANAGEMENT"], users: [] },
-        channels: { inApp: true, email: true },
-        params: { threshold: 25, unit: "%" },
-    },
-];
 
 const SEVERITY_OPTIONS = [
     { value: "Low", label: "Low" },
@@ -64,9 +26,32 @@ const SEVERITY_OPTIONS = [
 ];
 
 export function AlertsView() {
-    const [alerts, setAlerts] = useState<AlertConfig[]>(MOCK_ALERTS);
+    const [alerts, setAlerts] = useState<AlertConfig[]>([]);
+    const [users, setUsers] = useState<Array<{ id: string; name: string }>>([]);
     const [search, setSearch] = useState("");
     const [toast, setToast] = useState<string | null>(null);
+    const [saveError, setSaveError] = useState<string | null>(null);
+
+    useEffect(() => {
+        async function load() {
+            try {
+                const [alertsRes, usersRes] = await Promise.all([
+                    fetch("/api/admin/alerts"),
+                    fetch("/api/admin/users"),
+                ]);
+                if (!alertsRes.ok) throw new Error("Failed to load alerts");
+                if (!usersRes.ok) throw new Error("Failed to load users");
+
+                const alertsJson = (await alertsRes.json()) as { items: AlertConfig[] };
+                const usersJson = (await usersRes.json()) as { items: Array<{ id: string; name: string }> };
+                setAlerts(alertsJson.items ?? []);
+                setUsers(usersJson.items ?? []);
+            } catch (err) {
+                setToast(err instanceof Error ? err.message : "Failed to load");
+            }
+        }
+        void load();
+    }, []);
 
     useEffect(() => {
         if (!toast) return;
@@ -106,8 +91,19 @@ export function AlertsView() {
         }));
     };
 
-    const handleSave = () => {
-        setToast("Alert configuration saved.");
+    const handleSave = async () => {
+        setSaveError(null);
+        try {
+            const res = await fetch("/api/admin/alerts", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ items: alerts }),
+            });
+            if (!res.ok) throw new Error("Failed to save alert configuration");
+            setToast("Alert configuration saved.");
+        } catch (err) {
+            setSaveError(err instanceof Error ? err.message : "Failed to save");
+        }
     };
 
     return (
@@ -198,7 +194,7 @@ export function AlertsView() {
                                 <div className="space-y-2">
                                     <div className="text-xs text-muted-foreground">Recipients (users)</div>
                                     <div className="grid gap-2">
-                                        {MOCK_USERS.map((user) => (
+                                        {users.map((user) => (
                                             <label key={user.id} className="flex items-center gap-2 text-sm">
                                                 <input
                                                     type="checkbox"
@@ -279,6 +275,12 @@ export function AlertsView() {
             {toast ? (
                 <div className="fixed bottom-6 right-6 rounded-lg border border-border bg-white px-4 py-3 text-sm shadow-lg">
                     {toast}
+                </div>
+            ) : null}
+
+            {saveError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {saveError}
                 </div>
             ) : null}
         </div>

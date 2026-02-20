@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { Building, Building2, Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -14,6 +15,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
+import { PageHeader } from "@/components/ui/page-header";
 
 // ────────── Types ──────────
 
@@ -620,10 +622,10 @@ function ProjectsTab() {
 
 // ────────── Main component ──────────
 
-const TABS: { key: Tab; label: string; icon: string; desc: string }[] = [
-    { key: "distributors", label: "Distributors", icon: "🏭", desc: "Manage cement distributors and service areas" },
-    { key: "stores", label: "Stores", icon: "🏪", desc: "Manage retail stores / toko bangunan" },
-    { key: "projects", label: "Projects", icon: "🏗️", desc: "Manage construction projects and demand forecast" },
+const TABS: { key: Tab; label: string; icon: ReactNode; desc: string }[] = [
+    { key: "distributors", label: "Distributors", icon: <Building2 className="h-4 w-4" />, desc: "Manage cement distributors and service areas" },
+    { key: "stores", label: "Stores", icon: <Store className="h-4 w-4" />, desc: "Manage retail stores / toko bangunan" },
+    { key: "projects", label: "Projects", icon: <Building className="h-4 w-4" />, desc: "Manage construction projects and demand forecast" },
 ];
 
 export function ManagementClient() {
@@ -631,14 +633,11 @@ export function ManagementClient() {
     const current = TABS.find((t) => t.key === tab)!;
 
     return (
-        <div className="space-y-5">
-            {/* Header */}
-            <div>
-                <h1 className="text-lg font-semibold">Master Data Management</h1>
-                <p className="text-sm text-muted-foreground">
-                    Create, edit, and delete master data entities.
-                </p>
-            </div>
+        <div className="space-y-6">
+            <PageHeader
+                title="Master Data Management"
+                description="Create, edit, and delete master data entities."
+            />
 
             {/* Tab bar */}
             <div className="flex gap-1 rounded-lg border border-border bg-muted/60 p-1 w-fit">
@@ -652,7 +651,7 @@ export function ManagementClient() {
                                 : "flex items-center gap-2 rounded-md px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
                         }
                     >
-                        <span>{t.icon}</span>
+                        <span className="shrink-0">{t.icon}</span>
                         {t.label}
                     </button>
                 ))}
@@ -662,7 +661,7 @@ export function ManagementClient() {
             <Card>
                 <CardHeader>
                     <CardTitle>
-                        {current.icon} {current.label}
+                        <span className="flex items-center gap-1.5">{current.icon}{current.label}</span>
                     </CardTitle>
                     <span className="text-xs text-muted-foreground">{current.desc}</span>
                 </CardHeader>

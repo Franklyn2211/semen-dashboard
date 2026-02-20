@@ -1,15 +1,14 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
 import {
     CartesianGrid,
-    Cell,
     Legend,
     Line,
     LineChart,
@@ -20,184 +19,421 @@ import {
     YAxis,
 } from "recharts";
 
-const ExecMap = dynamic(() => import("./executive-map"), { ssr: false });
+export type ExecutiveMode = "performance" | "regional" | "sales";
 
-export function ExecutiveClient() {
+type TargetPoint = { date: string; target: number; actual: number };
+type SalesOverview = {
+    month: string;
+    current: { orderCount: number; qtyTons: number; revenue: number; avgOrderValue: number };
+    previous: { orderCount: number; qtyTons: number; revenue: number };
+    growth: { qtyPct: number; revenuePct: number };
+};
+type ShipmentsSummary = {
+    days: number;
+    total: number;
+    delivered: number;
+    overdue: number;
+    overduePct: number;
+    byStatus?: Record<string, number>;
+};
+type RegionalItem = {
+    distributorId: number;
+    distributorName: string;
+    orderCount: number;
+    qtyTons: number;
+    revenue: number;
+    growthPct: number;
+    avgOrderValue: number;
+    shipmentsTotal: number;
+    shipmentsOverdue: number;
+    overduePct: number;
+};
+type RegionalPerformance = { days: number; items: RegionalItem[]; note?: string };
+type SalesTopDistributor = { distributorId: number; distributorName: string; qtyTons: number; revenue: number };
+type SalesSummary = {
+    days: number;
+    orderCount: number;
+    approvedCount: number | null;
+    totalQtyTons: number;
+    totalRevenue: number;
+    avgOrderValue: number;
+    topDistributors: SalesTopDistributor[];
+};
+
+function formatIDR(value: number) {
+    return `Rp ${Math.round(value).toLocaleString("id")}`;
+}
+
+function downloadCSV(filename: string, rows: Record<string, unknown>[]) {
+    const allKeys = Array.from(
+        rows.reduce((s, r) => {
+            for (const k of Object.keys(r)) s.add(k);
+            return s;
+        }, new Set<string>()),
+    );
+    if (allKeys.length === 0) {
+        allKeys.push("note");
+        rows = [{ note: "No data" }];
+    }
+
+    const escape = (v: unknown) => {
+        const str = v == null ? "" : String(v);
+        if (/[\n\r,\"]/g.test(str)) return `"${str.replace(/\"/g, '""')}"`;
+        return str;
+    };
+
+    const csv = [
+        allKeys.join(","),
+        ...rows.map((r) => allKeys.map((k) => escape(r[k])).join(",")),
+    ].join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+}
+
+export function ExecutiveClient({ mode }: { mode: ExecutiveMode }) {
     const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
-    const [series, setSeries] = useState<{ date: string; target: number; actual: number }[]>([]);
-    const [stores, setStores] = useState<{ id: number; name: string; lat: number; lng: number; competitorSharePct: number }[]>([]);
-    const [partners, setPartners] = useState<{ distributorId: number; distributorName: string; totalQtyTons90d: number; trendPct: number }[]>([]);
-    const [search, setSearch] = useState("");
-    const [sortKey, setSortKey] = useState<"total" | "trend" | "name">("total");
-    const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+    const [targetSeries, setTargetSeries] = useState<TargetPoint[]>([]);
+    const [targetMonthly, setTargetMonthly] = useState<number | null>(null);
+    const [salesOverview, setSalesOverview] = useState<SalesOverview | null>(null);
+    const [shipments, setShipments] = useState<ShipmentsSummary | null>(null);
+    const [regional, setRegional] = useState<RegionalPerformance | null>(null);
+    const [salesSummary, setSalesSummary] = useState<SalesSummary | null>(null);
 
     useEffect(() => {
+        if (mode !== "performance") return;
+
         fetch(`/api/exec/target-vs-actual?month=${month}`)
             .then((r) => r.json())
-            .then((d) => setSeries((d.series ?? []) as { date: string; target: number; actual: number }[]))
-            .catch(() => setSeries([]));
-    }, [month]);
+            .then((d) => {
+                setTargetSeries((d.series ?? []) as TargetPoint[]);
+                setTargetMonthly(typeof d.targetMonthly === "number" ? d.targetMonthly : null);
+            })
+            .catch(() => {
+                setTargetSeries([]);
+                setTargetMonthly(null);
+            });
+
+        fetch(`/api/exec/sales/overview?month=${month}`)
+            .then((r) => r.json())
+            .then((d) => setSalesOverview(d as SalesOverview))
+            .catch(() => setSalesOverview(null));
+
+        fetch("/api/exec/shipments/summary")
+            .then((r) => r.json())
+            .then((d) => setShipments(d as ShipmentsSummary))
+            .catch(() => setShipments(null));
+
+        fetch("/api/exec/regional/performance?days=30")
+            .then((r) => r.json())
+            .then((d) => setRegional(d as RegionalPerformance))
+            .catch(() => setRegional(null));
+    }, [mode, month]);
 
     useEffect(() => {
-        const bbox = "-6.55,106.65,-6.00,107.35";
-        fetch(`/api/exec/competitor/map?bbox=${encodeURIComponent(bbox)}`)
+        if (mode !== "regional") return;
+        fetch("/api/exec/regional/performance?days=30")
             .then((r) => r.json())
-            .then((d) => setStores((d.items ?? []) as { id: number; name: string; lat: number; lng: number; competitorSharePct: number }[]))
-            .catch(() => setStores([]));
-    }, []);
+            .then((d) => setRegional(d as RegionalPerformance))
+            .catch(() => setRegional(null));
+    }, [mode]);
 
     useEffect(() => {
-        fetch("/api/exec/partners/performance")
+        if (mode !== "sales") return;
+        fetch("/api/exec/sales/summary?days=90")
             .then((r) => r.json())
-            .then((d) => setPartners((d.items ?? []) as { distributorId: number; distributorName: string; totalQtyTons90d: number; trendPct: number }[]))
-            .catch(() => setPartners([]));
-    }, []);
+            .then((d) => setSalesSummary(d as SalesSummary))
+            .catch(() => setSalesSummary(null));
+    }, [mode]);
 
-    const filtered = useMemo(() => {
-        const q = search.trim().toLowerCase();
-        let list = partners;
-        if (q) {
-            list = list.filter((p) =>
-                String(p.distributorName).toLowerCase().includes(q),
-            );
-        }
-        const dir = sortDir === "asc" ? 1 : -1;
-        return [...list].sort((a, b) => {
-            if (sortKey === "name") {
-                return String(a.distributorName).localeCompare(String(b.distributorName)) * dir;
-            }
-            if (sortKey === "trend") {
-                return (Number(a.trendPct) - Number(b.trendPct)) * dir;
-            }
-            return (Number(a.totalQtyTons90d) - Number(b.totalQtyTons90d)) * dir;
-        });
-    }, [partners, search, sortKey, sortDir]);
+    const kpiPerformance = useMemo(() => {
+        const actualMtd = targetSeries.length > 0 ? Number(targetSeries[targetSeries.length - 1]?.actual ?? 0) : 0;
+        const target = Number(targetMonthly ?? 0);
+        const achievementPct = target > 0 ? (actualMtd / target) * 100 : null;
 
-    function toggleSort(key: typeof sortKey) {
-        if (sortKey === key) {
-            setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-        } else {
-            setSortKey(key);
-            setSortDir("desc");
+        const bestRegion = regional?.items?.[0] ?? null;
+        const worstRegion = regional?.items && regional.items.length > 0 ? regional.items[regional.items.length - 1] : null;
+
+        return {
+            actualMtd,
+            achievementPct,
+            bestRegion,
+            worstRegion,
+        };
+    }, [targetSeries, targetMonthly, regional]);
+
+    const regionalSortedByRevenue = useMemo(() => {
+        const list = regional?.items ?? [];
+        return [...list].sort((a, b) => Number(b.revenue) - Number(a.revenue));
+    }, [regional]);
+
+    const salesTopByVolume = useMemo(() => {
+        const list = salesSummary?.topDistributors ?? [];
+        return [...list].sort((a, b) => Number(b.qtyTons) - Number(a.qtyTons));
+    }, [salesSummary]);
+
+    const salesTopByRevenue = useMemo(() => {
+        const list = salesSummary?.topDistributors ?? [];
+        return [...list].sort((a, b) => Number(b.revenue) - Number(a.revenue));
+    }, [salesSummary]);
+
+    const canDownload =
+        (mode === "performance" && (regional?.items?.length ?? 0) > 0) ||
+        (mode === "regional" && (regional?.items?.length ?? 0) > 0) ||
+        (mode === "sales" && (salesSummary?.topDistributors?.length ?? 0) > 0);
+
+    function downloadExcelCSV() {
+        const stamp = new Date().toISOString().slice(0, 10);
+
+        if (mode === "sales") {
+            const rows = (salesSummary?.topDistributors ?? []).map((it) => ({
+                distributorId: it.distributorId,
+                distributorName: it.distributorName,
+                qtyTons: it.qtyTons,
+                revenue: it.revenue,
+            }));
+            downloadCSV(`sales-summary_${stamp}.csv`, rows);
+            return;
         }
+
+        const rows = (regional?.items ?? []).map((it) => ({
+            distributorId: it.distributorId,
+            distributorName: it.distributorName,
+            orderCount: it.orderCount,
+            qtyTons: it.qtyTons,
+            revenue: it.revenue,
+            growthPct: it.growthPct,
+            avgOrderValue: it.avgOrderValue,
+            shipmentsTotal: it.shipmentsTotal,
+            shipmentsOverdue: it.shipmentsOverdue,
+            overduePct: it.overduePct,
+        }));
+        downloadCSV(`${mode === "regional" ? "regional-performance" : "performance-overview"}_${stamp}.csv`, rows);
     }
 
     return (
-        <div className="space-y-5">
-            {/* Page header */}
-            <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                    <h1 className="text-lg font-semibold">Executive Dashboard</h1>
-                    <p className="text-sm text-muted-foreground">Analitik tingkat eksekutif — target, kompetitor, dan performa mitra.</p>
-                </div>
-            </div>
+        <div className="space-y-6">
+            <PageHeader
+                title={
+                    mode === "performance"
+                        ? "Performance Overview"
+                        : mode === "regional"
+                            ? "Regional Performance"
+                            : "Sales Summary"
+                }
+                description={
+                    mode === "performance"
+                        ? "Gambaran besar performa: sales, target vs realisasi, growth, dan SLA distribusi."
+                        : mode === "regional"
+                            ? "Performa antar wilayah (proxy: distributor) untuk keputusan taktis regional."
+                            : "Ringkasan transaksi dan pendapatan untuk monitoring revenue & produktivitas distributor."
+                }
+                actions={
+                    <>
+                        <Button size="sm" variant="outline" onClick={() => window.print()}>
+                            Download PDF
+                        </Button>
+                        <Button size="sm" onClick={downloadExcelCSV} disabled={!canDownload}>
+                            Download Excel
+                        </Button>
+                    </>
+                }
+            />
 
-            {/* KPI summary */}
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                <Card>
-                    <CardContent className="p-4">
-                        <div className="text-xs text-muted-foreground">Total Mitra</div>
-                        <div className="mt-1 text-2xl font-bold">{partners.length}</div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardContent className="p-4">
-                        <div className="text-xs text-muted-foreground">Vol. Tertinggi (90d)</div>
-                        <div className="mt-1 text-2xl font-bold">
-                            {partners.length > 0
-                                ? `${Math.round(Math.max(...partners.map((p) => Number(p.totalQtyTons90d)))).toLocaleString("id")} t`
-                                : "—"}
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardContent className="p-4">
-                        <div className="text-xs text-muted-foreground">Avg Trend</div>
-                        <div className="mt-1 text-2xl font-bold">
-                            {partners.length > 0
-                                ? `${(partners.reduce((s, p) => s + Number(p.trendPct), 0) / partners.length).toFixed(1)}%`
-                                : "—"}
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardContent className="p-4">
-                        <div className="text-xs text-muted-foreground">Toko Dipetakan</div>
-                        <div className="mt-1 text-2xl font-bold">{stores.length}</div>
-                    </CardContent>
-                </Card>
-            </div>
-
-            <Card>
-                <CardHeader>
-                    <CardTitle>Target vs Actual</CardTitle>
-                </CardHeader>
-                <CardContent>
-                    <div className="mb-3 flex items-center gap-2">
-                        <div className="text-sm text-muted-foreground">Bulan</div>
-                        <Input className="h-8 w-[140px]" type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
+            {mode === "performance" ? (
+                <>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                        <Card>
+                            <CardContent className="p-4">
+                                <div className="text-xs text-muted-foreground">Total Penjualan (Bulan)</div>
+                                <div className="mt-1 text-2xl font-bold">
+                                    {salesOverview ? formatIDR(Number(salesOverview.current.revenue ?? 0)) : "—"}
+                                </div>
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardContent className="p-4">
+                                <div className="text-xs text-muted-foreground">Volume (Bulan)</div>
+                                <div className="mt-1 text-2xl font-bold">
+                                    {salesOverview ? `${Math.round(Number(salesOverview.current.qtyTons ?? 0)).toLocaleString("id")} t` : "—"}
+                                </div>
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardContent className="p-4">
+                                <div className="text-xs text-muted-foreground">Target vs Realisasi</div>
+                                <div className="mt-1 text-2xl font-bold">
+                                    {kpiPerformance.achievementPct != null ? `${kpiPerformance.achievementPct.toFixed(1)}%` : "—"}
+                                </div>
+                                <div className="mt-1 text-xs text-muted-foreground">
+                                    {targetMonthly != null ? `Target ${Math.round(targetMonthly).toLocaleString("id")} t` : ""}
+                                </div>
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardContent className="p-4">
+                                <div className="text-xs text-muted-foreground">Pertumbuhan Bulanan</div>
+                                <div className="mt-1 text-2xl font-bold">
+                                    {salesOverview ? (
+                                        <Badge variant={Number(salesOverview.growth.revenuePct) >= 0 ? "success" : "danger"}>
+                                            {Number(salesOverview.growth.revenuePct) >= 0 ? "+" : ""}{Number(salesOverview.growth.revenuePct).toFixed(1)}%
+                                        </Badge>
+                                    ) : (
+                                        "—"
+                                    )}
+                                </div>
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardContent className="p-4">
+                                <div className="text-xs text-muted-foreground">Shipment Berhasil</div>
+                                <div className="mt-1 text-2xl font-bold">{shipments ? Number(shipments.delivered).toLocaleString("id") : "—"}</div>
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardContent className="p-4">
+                                <div className="text-xs text-muted-foreground">Tingkat Keterlambatan</div>
+                                <div className="mt-1 text-2xl font-bold">{shipments ? `${Number(shipments.overduePct ?? 0).toFixed(1)}%` : "—"}</div>
+                                <div className="mt-1 text-xs text-muted-foreground">{shipments ? `${shipments.overdue} overdue` : ""}</div>
+                            </CardContent>
+                        </Card>
                     </div>
-                    <div className="h-[260px]">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <LineChart data={series}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-                                <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                                <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
-                                <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }} />
-                                <Legend wrapperStyle={{ fontSize: 12 }} />
-                                <ReferenceLine y={0} stroke="#e2e8f0" />
-                                <Line type="monotone" dataKey="target" name="Target" stroke="#94a3b8" strokeWidth={2} strokeDasharray="6 3" dot={false} />
-                                <Line type="monotone" dataKey="actual" name="Aktual" stroke="#2563eb" strokeWidth={2.5} dot={false} />
-                            </LineChart>
-                        </ResponsiveContainer>
-                    </div>
-                </CardContent>
-            </Card>
 
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-                <div className="lg:col-span-2">
                     <Card>
                         <CardHeader>
-                            <CardTitle>Competitor Dominance Map</CardTitle>
+                            <CardTitle>Target vs Realisasi (MTD)</CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <div className="h-[380px] overflow-hidden rounded-md border border-border">
-                                <ExecMap stores={stores} />
+                            <div className="mb-3 flex items-center gap-2">
+                                <div className="text-sm text-muted-foreground">Bulan</div>
+                                <Input className="h-8 w-[140px]" type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
+                            </div>
+                            <div className="h-[260px]">
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <LineChart data={targetSeries}>
+                                        <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                                        <XAxis dataKey="date" tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                                        <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                                        <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12 }} />
+                                        <Legend wrapperStyle={{ fontSize: 12 }} />
+                                        <ReferenceLine y={0} stroke="#e2e8f0" />
+                                        <Line type="monotone" dataKey="target" name="Target" stroke="#94a3b8" strokeWidth={2} strokeDasharray="6 3" dot={false} />
+                                        <Line type="monotone" dataKey="actual" name="Aktual" stroke="#2563eb" strokeWidth={2.5} dot={false} />
+                                    </LineChart>
+                                </ResponsiveContainer>
                             </div>
                         </CardContent>
                     </Card>
-                </div>
-                <div>
+
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+                        <Card className="lg:col-span-2">
+                            <CardHeader>
+                                <CardTitle>Regional Snapshot (30 Hari)</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="overflow-auto rounded-md border border-border">
+                                    <Table>
+                                        <THead>
+                                            <TR>
+                                                <TH>Wilayah (Distributor)</TH>
+                                                <TH className="text-right">Revenue</TH>
+                                                <TH className="text-right">Growth</TH>
+                                                <TH className="text-right">Delay %</TH>
+                                            </TR>
+                                        </THead>
+                                        <TBody>
+                                            {regionalSortedByRevenue.slice(0, 10).map((it) => (
+                                                <TR key={it.distributorId}>
+                                                    <TD className="font-medium">{it.distributorName}</TD>
+                                                    <TD className="text-right font-mono">{formatIDR(Number(it.revenue ?? 0)).replace("Rp ", "")}</TD>
+                                                    <TD className="text-right">
+                                                        <Badge variant={Number(it.growthPct) >= 0 ? "success" : "danger"}>
+                                                            {Number(it.growthPct) >= 0 ? "+" : ""}{Number(it.growthPct).toFixed(1)}%
+                                                        </Badge>
+                                                    </TD>
+                                                    <TD className="text-right font-mono">{Number(it.overduePct ?? 0).toFixed(1)}%</TD>
+                                                </TR>
+                                            ))}
+                                        </TBody>
+                                    </Table>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Wilayah Terbaik & Terlemah</CardTitle>
+                            </CardHeader>
+                            <CardContent className="space-y-3">
+                                <div>
+                                    <div className="text-xs text-muted-foreground">Terbaik (Revenue 30d)</div>
+                                    <div className="mt-1 font-semibold">{kpiPerformance.bestRegion ? kpiPerformance.bestRegion.distributorName : "—"}</div>
+                                    <div className="mt-1 text-sm text-muted-foreground">
+                                        {kpiPerformance.bestRegion ? formatIDR(Number(kpiPerformance.bestRegion.revenue ?? 0)) : ""}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className="text-xs text-muted-foreground">Terlemah (Revenue 30d)</div>
+                                    <div className="mt-1 font-semibold">{kpiPerformance.worstRegion ? kpiPerformance.worstRegion.distributorName : "—"}</div>
+                                    <div className="mt-1 text-sm text-muted-foreground">
+                                        {kpiPerformance.worstRegion ? formatIDR(Number(kpiPerformance.worstRegion.revenue ?? 0)) : ""}
+                                    </div>
+                                </div>
+                                {regional?.note ? (
+                                    <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+                                        {regional.note}
+                                    </div>
+                                ) : null}
+                            </CardContent>
+                        </Card>
+                    </div>
+                </>
+            ) : null}
+
+            {mode === "regional" ? (
+                <>
                     <Card>
                         <CardHeader>
-                            <CardTitle>Partner Performance</CardTitle>
+                            <CardTitle>Performa per Wilayah (30 Hari)</CardTitle>
                         </CardHeader>
-                        <CardContent className="space-y-2">
-                            <Input placeholder="Search distributor..." value={search} onChange={(e) => setSearch(e.target.value)} />
-                            <div className="flex gap-2">
-                                <Button variant="outline" size="sm" onClick={() => toggleSort("name")}>Name</Button>
-                                <Button variant="outline" size="sm" onClick={() => toggleSort("total")}>Total</Button>
-                                <Button variant="outline" size="sm" onClick={() => toggleSort("trend")}>Trend</Button>
-                            </div>
-                            <div className="max-h-[320px] overflow-auto rounded-md border border-border">
+                        <CardContent>
+                            {regional?.note ? (
+                                <div className="mb-3 rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground">
+                                    {regional.note}
+                                </div>
+                            ) : null}
+                            <div className="overflow-auto rounded-md border border-border">
                                 <Table>
                                     <THead>
                                         <TR>
-                                            <TH>Distributor</TH>
-                                            <TH className="text-right">Qty 90d</TH>
-                                            <TH className="text-right">Trend %</TH>
+                                            <TH>Wilayah (Distributor)</TH>
+                                            <TH className="text-right">Orders</TH>
+                                            <TH className="text-right">Revenue</TH>
+                                            <TH className="text-right">Growth</TH>
+                                            <TH className="text-right">Avg Transaksi</TH>
+                                            <TH className="text-right">Delay %</TH>
                                         </TR>
                                     </THead>
                                     <TBody>
-                                        {filtered.map((p) => (
-                                            <TR key={p.distributorId}>
-                                                <TD className="font-medium">{p.distributorName}</TD>
-                                                <TD className="text-right font-mono">{Number(p.totalQtyTons90d).toFixed(0)}</TD>
+                                        {(regionalSortedByRevenue ?? []).map((it) => (
+                                            <TR key={it.distributorId}>
+                                                <TD className="font-medium">{it.distributorName}</TD>
+                                                <TD className="text-right font-mono">{Number(it.orderCount ?? 0).toLocaleString("id")}</TD>
+                                                <TD className="text-right font-mono">{formatIDR(Number(it.revenue ?? 0)).replace("Rp ", "")}</TD>
                                                 <TD className="text-right">
-                                                    <Badge variant={Number(p.trendPct) >= 0 ? "success" : "danger"}>
-                                                        {Number(p.trendPct) >= 0 ? "+" : ""}{Number(p.trendPct).toFixed(1)}%
+                                                    <Badge variant={Number(it.growthPct) >= 0 ? "success" : "danger"}>
+                                                        {Number(it.growthPct) >= 0 ? "+" : ""}{Number(it.growthPct).toFixed(1)}%
                                                     </Badge>
                                                 </TD>
+                                                <TD className="text-right font-mono">{formatIDR(Number(it.avgOrderValue ?? 0)).replace("Rp ", "")}</TD>
+                                                <TD className="text-right font-mono">{Number(it.overduePct ?? 0).toFixed(1)}%</TD>
                                             </TR>
                                         ))}
                                     </TBody>
@@ -205,8 +441,111 @@ export function ExecutiveClient() {
                             </div>
                         </CardContent>
                     </Card>
-                </div>
-            </div>
+                </>
+            ) : null}
+
+            {mode === "sales" ? (
+                <>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+                        <Card>
+                            <CardContent className="p-4">
+                                <div className="text-xs text-muted-foreground">Total Order Masuk (90d)</div>
+                                <div className="mt-1 text-2xl font-bold">{salesSummary ? Number(salesSummary.orderCount).toLocaleString("id") : "—"}</div>
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardContent className="p-4">
+                                <div className="text-xs text-muted-foreground">Total Order Disetujui</div>
+                                <div className="mt-1 text-2xl font-bold">{salesSummary?.approvedCount != null ? Number(salesSummary.approvedCount).toLocaleString("id") : "—"}</div>
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardContent className="p-4">
+                                <div className="text-xs text-muted-foreground">Total Pendapatan (90d)</div>
+                                <div className="mt-1 text-2xl font-bold">{salesSummary ? formatIDR(Number(salesSummary.totalRevenue ?? 0)) : "—"}</div>
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardContent className="p-4">
+                                <div className="text-xs text-muted-foreground">Rata-rata Transaksi</div>
+                                <div className="mt-1 text-2xl font-bold">{salesSummary ? formatIDR(Number(salesSummary.avgOrderValue ?? 0)) : "—"}</div>
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardContent className="p-4">
+                                <div className="text-xs text-muted-foreground">Top Distributor (Volume)</div>
+                                <div className="mt-1 text-sm font-semibold">{salesTopByVolume[0]?.distributorName ?? "—"}</div>
+                                <div className="mt-1 text-xs text-muted-foreground">{salesTopByVolume[0] ? `${Math.round(Number(salesTopByVolume[0].qtyTons)).toLocaleString("id")} t / 90d` : ""}</div>
+                            </CardContent>
+                        </Card>
+                        <Card>
+                            <CardContent className="p-4">
+                                <div className="text-xs text-muted-foreground">Produk Paling Laku</div>
+                                <div className="mt-1 text-2xl font-bold">—</div>
+                                <div className="mt-1 text-xs text-muted-foreground">Belum ada data produk pada `sales_orders`.</div>
+                            </CardContent>
+                        </Card>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Top Distributor by Revenue (90d)</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="overflow-auto rounded-md border border-border">
+                                    <Table>
+                                        <THead>
+                                            <TR>
+                                                <TH>Distributor</TH>
+                                                <TH className="text-right">Revenue</TH>
+                                                <TH className="text-right">Qty (t)</TH>
+                                            </TR>
+                                        </THead>
+                                        <TBody>
+                                            {salesTopByRevenue.slice(0, 10).map((it) => (
+                                                <TR key={it.distributorId}>
+                                                    <TD className="font-medium">{it.distributorName}</TD>
+                                                    <TD className="text-right font-mono">{formatIDR(Number(it.revenue ?? 0)).replace("Rp ", "")}</TD>
+                                                    <TD className="text-right font-mono">{Number(it.qtyTons ?? 0).toFixed(0)}</TD>
+                                                </TR>
+                                            ))}
+                                        </TBody>
+                                    </Table>
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>Top Distributor by Volume (90d)</CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                                <div className="overflow-auto rounded-md border border-border">
+                                    <Table>
+                                        <THead>
+                                            <TR>
+                                                <TH>Distributor</TH>
+                                                <TH className="text-right">Qty (t)</TH>
+                                                <TH className="text-right">Revenue</TH>
+                                            </TR>
+                                        </THead>
+                                        <TBody>
+                                            {salesTopByVolume.slice(0, 10).map((it) => (
+                                                <TR key={it.distributorId}>
+                                                    <TD className="font-medium">{it.distributorName}</TD>
+                                                    <TD className="text-right font-mono">{Number(it.qtyTons ?? 0).toFixed(0)}</TD>
+                                                    <TD className="text-right font-mono">{formatIDR(Number(it.revenue ?? 0)).replace("Rp ", "")}</TD>
+                                                </TR>
+                                            ))}
+                                        </TBody>
+                                    </Table>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    </div>
+                </>
+            ) : null}
         </div>
     );
 }

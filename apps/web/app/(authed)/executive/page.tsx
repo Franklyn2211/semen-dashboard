@@ -1,7 +1,5 @@
-import { requireMe } from "@/lib/server/auth";
-import { ExecutiveClient } from "@/components/modules/executive/executive-client";
+import { redirect } from "next/navigation";
 
-export default async function ExecutivePage() {
-    await requireMe(["ADMIN", "EXEC"]);
-    return <ExecutiveClient />;
+export default function ExecutivePage() {
+    redirect("/executive/performance");
 }

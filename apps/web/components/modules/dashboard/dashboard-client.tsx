@@ -1,6 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
+import {
+    AlertTriangle,
+    Award,
+    Bell,
+    Building,
+    Building2,
+    Calendar,
+    CheckCircle,
+    FileText,
+    Package,
+    Store,
+    TrendingUp,
+    Truck,
+    Users,
+} from "lucide-react";
 import {
     Bar,
     BarChart,
@@ -18,6 +33,10 @@ import {
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import type { Role } from "@/lib/types";
+import type { DistributorInventoryResponse } from "@/components/modules/distributor/inventory-client";
+import type { DistributorOrderItem } from "@/components/modules/distributor/orders-client";
+import type { DistributorShipmentItem } from "@/components/modules/distributor/shipment-tracking-client";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -45,9 +64,9 @@ function StatCard({
     sub,
     accent,
 }: {
-    icon: string;
+    icon: ReactNode;
     title: string;
-    value: React.ReactNode;
+    value: ReactNode;
     sub?: string;
     accent?: string;
 }) {
@@ -56,8 +75,8 @@ function StatCard({
             <CardContent className="p-5">
                 <div className="flex items-start gap-3">
                     <div
-                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-xl"
-                        style={{ background: accent ? `${accent}18` : "#2563eb18" }}
+                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl"
+                        style={{ background: accent ? `${accent}18` : "#2563eb18", color: accent ?? "#2563eb" }}
                     >
                         {icon}
                     </div>
@@ -101,9 +120,14 @@ export function DashboardClient({
     role,
     name,
 }: {
-    role: "ADMIN" | "OPS" | "EXEC";
+    role: Role;
     name: string;
 }) {
+    const isAdmin = role === "SUPER_ADMIN";
+    const isOps = role === "OPERATOR" || role === "MANAGEMENT" || isAdmin;
+    const isExec = role === "MANAGEMENT" || isAdmin;
+    const isDistributor = role === "DISTRIBUTOR";
+
     // ── state ──────────────────────────────────────────────────────────────────
     const [distributorsCount, setDistributorsCount] = useState<number | null>(null);
     const [storesCount, setStoresCount] = useState<number | null>(null);
@@ -114,11 +138,15 @@ export function DashboardClient({
     const [targetSeries, setTargetSeries] = useState<{ date: string; target: number; actual: number }[]>([]);
     const [partners, setPartners] = useState<{ distributorName: string; totalQtyTons90d: number; trendPct: number }[]>([]);
 
+    const [distInventory, setDistInventory] = useState<DistributorInventoryResponse | null>(null);
+    const [distOrders, setDistOrders] = useState<DistributorOrderItem[]>([]);
+    const [distShipments, setDistShipments] = useState<DistributorShipmentItem[]>([]);
+
     const month = new Date().toISOString().slice(0, 7);
 
     useEffect(() => {
         // ADMIN & OPS: ops data
-        if (role === "ADMIN" || role === "OPS") {
+        if (isOps) {
             fetch("/api/ops/stock")
                 .then((r) => r.json())
                 .then((d) => {
@@ -149,7 +177,7 @@ export function DashboardClient({
         }
 
         // ADMIN only: master data counts
-        if (role === "ADMIN") {
+        if (isAdmin) {
             fetch("/api/admin/distributors")
                 .then((r) => r.json())
                 .then((d) => setDistributorsCount((d.items ?? []).length))
@@ -166,8 +194,8 @@ export function DashboardClient({
                 .catch(() => setProjectsCount(null));
         }
 
-        // ADMIN & EXEC: exec analytics
-        if (role === "ADMIN" || role === "EXEC") {
+        // ADMIN & MANAGEMENT: exec analytics
+        if (isExec) {
             fetch(`/api/exec/target-vs-actual?month=${month}`)
                 .then((r) => r.json())
                 .then((d) =>
@@ -186,7 +214,25 @@ export function DashboardClient({
                 )
                 .catch(() => setPartners([]));
         }
-    }, [role, month]);
+
+        // DISTRIBUTOR: my dashboard data
+        if (isDistributor) {
+            fetch("/api/distributor/inventory")
+                .then((r) => r.json())
+                .then((d) => setDistInventory(d as DistributorInventoryResponse))
+                .catch(() => setDistInventory(null));
+
+            fetch("/api/distributor/orders")
+                .then((r) => r.json())
+                .then((d) => setDistOrders((d.items ?? []) as DistributorOrderItem[]))
+                .catch(() => setDistOrders([]));
+
+            fetch("/api/distributor/shipments")
+                .then((r) => r.json())
+                .then((d) => setDistShipments((d.items ?? []) as DistributorShipmentItem[]))
+                .catch(() => setDistShipments([]));
+        }
+    }, [isAdmin, isDistributor, isOps, isExec, month]);
 
     // ── derived ────────────────────────────────────────────────────────────────
     const highReorders = reorderItems.filter((r) => r.urgency === "HIGH").length;
@@ -202,11 +248,100 @@ export function DashboardClient({
     ];
 
     const PIE_COLORS: Record<string, string> = {
-        PLANNED: "#94a3b8",
-        IN_TRANSIT: "#2563eb",
-        DELIVERED: "#16a34a",
+        SCHEDULED: "#94a3b8",
+        ON_DELIVERY: "#2563eb",
+        DELAYED: "#d97706",
+        COMPLETED: "#16a34a",
         CANCELLED: "#dc2626",
     };
+
+    if (isDistributor) {
+        const onHand = distInventory?.totals?.estimatedOnHandTons ?? null;
+
+        const activeOrders = distOrders.filter((o) => o.status === "PENDING" || o.status === "APPROVED");
+        const lastOrder = [...distOrders].sort((a, b) => {
+            const at = a.requestedAt ? new Date(a.requestedAt).getTime() : 0;
+            const bt = b.requestedAt ? new Date(b.requestedAt).getTime() : 0;
+            return bt - at;
+        })[0];
+
+        const inTransit = distShipments.filter((s) => s.status === "SCHEDULED" || s.status === "ON_DELIVERY" || s.status === "DELAYED");
+        const delayed = distShipments.filter((s) => s.status === "DELAYED").length;
+        const approvalNotifications = distOrders.filter((o) => o.status === "APPROVED" || o.status === "REJECTED").length;
+
+        return (
+            <div className="space-y-6">
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+                    <div>
+                        <h1 className="text-xl font-bold text-foreground">{greeting(name)}</h1>
+                        <p className="text-sm text-muted-foreground">{today()}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Badge variant="secondary" className="text-xs">
+                            Role: {role}
+                        </Badge>
+                        {delayed > 0 ? (
+                            <Badge variant="warning" className="text-xs">
+                                {delayed} Shipment Delay
+                            </Badge>
+                        ) : null}
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <StatCard
+                        icon={<Package className="h-5 w-5" />}
+                        title="Stok Saat Ini"
+                        value={onHand != null ? Math.round(Number(onHand)).toLocaleString("id") : "—"}
+                        sub="Estimated on-hand (ton)"
+                        accent="#2563eb"
+                    />
+                    <StatCard
+                        icon={<FileText className="h-5 w-5" />}
+                        title="Order Aktif"
+                        value={activeOrders.length.toLocaleString("id")}
+                        sub="Pending / Approved"
+                        accent="#7c3aed"
+                    />
+                    <StatCard
+                        icon={<Truck className="h-5 w-5" />}
+                        title="Shipment Berjalan"
+                        value={inTransit.length.toLocaleString("id")}
+                        sub="Scheduled / On delivery / Delayed"
+                        accent="#16a34a"
+                    />
+                    <StatCard
+                        icon={<Bell className="h-5 w-5" />}
+                        title="Notifikasi"
+                        value={approvalNotifications.toLocaleString("id")}
+                        sub="Approval / Rejection events"
+                        accent="#d97706"
+                    />
+                </div>
+
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Order Terakhir</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        {lastOrder ? (
+                            <div className="space-y-1 text-sm">
+                                <div>
+                                    <span className="font-semibold">#{lastOrder.id}</span> · <Badge variant="secondary">{lastOrder.status}</Badge>
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                    {lastOrder.cementType} · {Number(lastOrder.quantityTons).toLocaleString("id-ID")} ton · {lastOrder.requestedAt ? new Date(lastOrder.requestedAt).toLocaleString("id-ID") : "—"}
+                                </div>
+                                {lastOrder.decisionReason ? <div className="text-xs text-muted-foreground">{lastOrder.decisionReason}</div> : null}
+                            </div>
+                        ) : (
+                            <div className="text-sm text-muted-foreground">Belum ada order.</div>
+                        )}
+                    </CardContent>
+                </Card>
+            </div>
+        );
+    }
 
     // ── render ─────────────────────────────────────────────────────────────────
     return (
@@ -231,31 +366,31 @@ export function DashboardClient({
 
             {/* KPI Cards */}
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                {role === "ADMIN" && (
+                {isAdmin && (
                     <>
                         <StatCard
-                            icon="🏭"
+                            icon={<Building2 className="h-5 w-5" />}
                             title="Distributor"
                             value={distributorsCount ?? "—"}
                             sub="total terdaftar"
                             accent="#2563eb"
                         />
                         <StatCard
-                            icon="🏪"
+                            icon={<Store className="h-5 w-5" />}
                             title="Toko"
                             value={storesCount ?? "—"}
                             sub="total terdaftar"
                             accent="#7c3aed"
                         />
                         <StatCard
-                            icon="🏗️"
+                            icon={<Building className="h-5 w-5" />}
                             title="Proyek Aktif"
                             value={projectsCount ?? "—"}
                             sub="dalam pipeline"
                             accent="#0891b2"
                         />
                         <StatCard
-                            icon="📦"
+                            icon={<Package className="h-5 w-5" />}
                             title="Total Stok"
                             value={stockTotal !== null ? `${Math.round(stockTotal).toLocaleString("id")} t` : "—"}
                             sub="semua gudang"
@@ -264,50 +399,50 @@ export function DashboardClient({
                     </>
                 )}
 
-                {role === "OPS" && (
+                {role === "OPERATOR" && (
                     <>
                         <StatCard
-                            icon="📦"
+                            icon={<Package className="h-5 w-5" />}
                             title="Total Stok"
                             value={stockTotal !== null ? `${Math.round(stockTotal).toLocaleString("id")} t` : "—"}
                             sub="semua gudang"
                             accent="#16a34a"
                         />
                         <StatCard
-                            icon="🔴"
+                            icon={<AlertTriangle className="h-5 w-5" />}
                             title="Reorder HIGH"
                             value={reorderItems.filter((r) => r.urgency === "HIGH").length}
                             sub="perlu segera di-order"
                             accent="#dc2626"
                         />
                         <StatCard
-                            icon="🚚"
+                            icon={<Truck className="h-5 w-5" />}
                             title="Total Pengiriman"
                             value={shipmentStatuses.reduce((s, i) => s + i.count, 0)}
                             sub="halaman pertama"
                             accent="#d97706"
                         />
                         <StatCard
-                            icon="✅"
-                            title="Delivered"
-                            value={shipmentStatuses.find((s) => s.status === "DELIVERED")?.count ?? 0}
+                            icon={<CheckCircle className="h-5 w-5" />}
+                            title="Completed"
+                            value={shipmentStatuses.find((s) => s.status === "COMPLETED")?.count ?? 0}
                             sub="berhasil terkirim"
                             accent="#16a34a"
                         />
                     </>
                 )}
 
-                {role === "EXEC" && (
+                {role === "MANAGEMENT" && (
                     <>
                         <StatCard
-                            icon="🤝"
+                            icon={<Users className="h-5 w-5" />}
                             title="Total Partner"
                             value={partners.length}
                             sub="distributor aktif"
                             accent="#2563eb"
                         />
                         <StatCard
-                            icon="📈"
+                            icon={<TrendingUp className="h-5 w-5" />}
                             title="Avg Trend"
                             value={
                                 partners.length > 0
@@ -318,7 +453,7 @@ export function DashboardClient({
                             accent="#16a34a"
                         />
                         <StatCard
-                            icon="🏆"
+                            icon={<Award className="h-5 w-5" />}
                             title="Volume Tertinggi"
                             value={
                                 top5Partners.length > 0
@@ -329,7 +464,7 @@ export function DashboardClient({
                             accent="#7c3aed"
                         />
                         <StatCard
-                            icon="📅"
+                            icon={<Calendar className="h-5 w-5" />}
                             title="Periode"
                             value={month}
                             sub="bulan aktif"
@@ -340,7 +475,7 @@ export function DashboardClient({
             </div>
 
             {/* Charts row 1: Target vs Actual + Shipment Status */}
-            {(role === "ADMIN" || role === "EXEC") && targetSeries.length > 0 && (
+            {isExec && targetSeries.length > 0 && (
                 <>
                     <SectionLabel>Kinerja Penjualan</SectionLabel>
                     <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -395,7 +530,7 @@ export function DashboardClient({
             )}
 
             {/* Charts row 2: Shipment Status + Reorder Urgency */}
-            {(role === "ADMIN" || role === "OPS") && (
+            {isOps && (
                 <>
                     <SectionLabel>Operasional</SectionLabel>
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -458,7 +593,7 @@ export function DashboardClient({
                                             <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                             <XAxis dataKey="label" tick={{ fontSize: 12, fontWeight: 600 }} tickLine={false} axisLine={false} />
                                             <YAxis tick={{ fontSize: 10 }} tickLine={false} axisLine={false} allowDecimals={false} />
-                                            <Tooltip {...ChartTooltipStyle} formatter={(v: number) => [`${v} distributor`, "Jumlah"]} />
+                                            <Tooltip {...ChartTooltipStyle} formatter={(v: number) => [`${v} item`, "Jumlah"]} />
                                             <Bar dataKey="count" name="Distributor" radius={[4, 4, 0, 0]}>
                                                 {reorderChart.map((r, i) => (
                                                     <Cell key={i} fill={r.fill} />
@@ -496,8 +631,8 @@ export function DashboardClient({
                 </>
             )}
 
-            {/* EXEC: partner trend cards */}
-            {role === "EXEC" && partners.length > 0 && (
+            {/* MANAGEMENT: partner trend cards */}
+            {role === "MANAGEMENT" && partners.length > 0 && (
                 <>
                     <SectionLabel>Performa Partner</SectionLabel>
                     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

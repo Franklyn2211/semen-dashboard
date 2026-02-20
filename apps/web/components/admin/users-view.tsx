@@ -34,53 +34,6 @@ const STATUS_OPTIONS = [
     { value: "DISABLED", label: "Disabled" },
 ];
 
-const REGION_OPTIONS = [
-    { value: "all", label: "All regions" },
-    { value: "jakarta", label: "Jakarta" },
-    { value: "bekasi", label: "Bekasi" },
-    { value: "tangerang", label: "Tangerang" },
-    { value: "bogor", label: "Bogor" },
-];
-
-const MOCK_USERS: AdminUser[] = [
-    {
-        id: "usr-1",
-        name: "Nadia Putri",
-        email: "nadia.putri@cementops.co",
-        role: "SUPER_ADMIN",
-        regionId: "jakarta",
-        status: "ACTIVE",
-        lastLoginAt: "2026-02-18 08:20",
-    },
-    {
-        id: "usr-2",
-        name: "Raka Pratama",
-        email: "raka.pratama@cementops.co",
-        role: "MANAGEMENT",
-        regionId: "bekasi",
-        status: "ACTIVE",
-        lastLoginAt: "2026-02-18 14:05",
-    },
-    {
-        id: "usr-3",
-        name: "Dewi Ananda",
-        email: "dewi.ananda@cementops.co",
-        role: "OPERATOR",
-        regionId: "tangerang",
-        status: "DISABLED",
-        lastLoginAt: "2026-02-14 09:12",
-    },
-    {
-        id: "usr-4",
-        name: "Tegar Mandala",
-        email: "tegar.mandala@cementops.co",
-        role: "DISTRIBUTOR",
-        regionId: "bogor",
-        status: "ACTIVE",
-        lastLoginAt: "2026-02-18 06:32",
-    },
-];
-
 type ConfirmState = {
     open: boolean;
     title: string;
@@ -94,7 +47,8 @@ type UserFormState = {
     name: string;
     email: string;
     role: AdminRole;
-    regionId: string;
+    distributorId: string;
+    password: string;
     status: UserStatus;
 };
 
@@ -102,22 +56,54 @@ const EMPTY_FORM: UserFormState = {
     name: "",
     email: "",
     role: "MANAGEMENT",
-    regionId: "jakarta",
+    distributorId: "",
+    password: "",
     status: "ACTIVE",
 };
 
 export function UsersView() {
-    const [users, setUsers] = useState<AdminUser[]>(MOCK_USERS);
+    const [users, setUsers] = useState<AdminUser[]>([]);
+    const [distributors, setDistributors] = useState<Array<{ id: string; name: string }>>([]);
+    const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [search, setSearch] = useState("");
     const [roleFilter, setRoleFilter] = useState("all");
     const [statusFilter, setStatusFilter] = useState("all");
-    const [regionFilter, setRegionFilter] = useState("all");
     const [toast, setToast] = useState<string | null>(null);
     const [confirm, setConfirm] = useState<ConfirmState | null>(null);
     const [formOpen, setFormOpen] = useState(false);
     const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
     const [formState, setFormState] = useState<UserFormState>(EMPTY_FORM);
     const [formError, setFormError] = useState<string | null>(null);
+
+    async function load() {
+        setLoading(true);
+        setLoadError(null);
+        try {
+            const [usersRes, distRes] = await Promise.all([
+                fetch("/api/admin/users"),
+                fetch("/api/admin/distributors"),
+            ]);
+            if (!usersRes.ok) throw new Error("Failed to load users");
+            if (!distRes.ok) throw new Error("Failed to load distributors");
+
+            const usersJson = (await usersRes.json()) as { items: AdminUser[] };
+            const distJson = (await distRes.json()) as { items: Array<{ id: number | string; name: string }> };
+
+            setUsers(usersJson.items ?? []);
+            setDistributors(
+                (distJson.items ?? []).map((d) => ({ id: String(d.id), name: d.name })),
+            );
+        } catch (err) {
+            setLoadError(err instanceof Error ? err.message : "Failed to load");
+        } finally {
+            setLoading(false);
+        }
+    }
+
+    useEffect(() => {
+        void load();
+    }, []);
 
     useEffect(() => {
         if (!toast) return;
@@ -132,10 +118,15 @@ export function UsersView() {
                 user.email.toLowerCase().includes(search.toLowerCase());
             const matchesRole = roleFilter === "all" || user.role === roleFilter;
             const matchesStatus = statusFilter === "all" || user.status === statusFilter;
-            const matchesRegion = regionFilter === "all" || user.regionId === regionFilter;
-            return matchesSearch && matchesRole && matchesStatus && matchesRegion;
+            return matchesSearch && matchesRole && matchesStatus;
         });
-    }, [users, search, roleFilter, statusFilter, regionFilter]);
+    }, [users, search, roleFilter, statusFilter]);
+
+    const distributorNameById = useMemo(() => {
+        const map = new Map<string, string>();
+        distributors.forEach((d) => map.set(d.id, d.name));
+        return map;
+    }, [distributors]);
 
     const openAddDialog = () => {
         setEditingUser(null);
@@ -150,38 +141,69 @@ export function UsersView() {
             name: user.name,
             email: user.email,
             role: user.role,
-            regionId: user.regionId,
+            distributorId: user.distributorId ?? "",
+            password: "",
             status: user.status,
         });
         setFormError(null);
         setFormOpen(true);
     };
 
-    const handleSave = () => {
+    const handleSave = async () => {
         if (!formState.name.trim() || !formState.email.trim()) {
             setFormError("Name and email are required.");
             return;
         }
-        if (editingUser) {
-            setUsers((prev) =>
-                prev.map((user) =>
-                    user.id === editingUser.id
-                        ? { ...user, ...formState, lastLoginAt: user.lastLoginAt }
-                        : user,
-                ),
-            );
-        } else {
-            const now = new Date().toISOString().slice(0, 16).replace("T", " ");
-            setUsers((prev) => [
-                {
-                    id: `usr-${Date.now()}`,
-                    lastLoginAt: now,
-                    ...formState,
-                },
-                ...prev,
-            ]);
+        if (!editingUser && !formState.password.trim()) {
+            setFormError("Password is required when creating a user.");
+            return;
         }
-        setFormOpen(false);
+        if (formState.role === "DISTRIBUTOR" && !formState.distributorId) {
+            setFormError("Distributor is required for Distributor role.");
+            return;
+        }
+
+        try {
+            setFormError(null);
+            if (editingUser) {
+                const res = await fetch(`/api/admin/users/${editingUser.id}`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        name: formState.name,
+                        email: formState.email,
+                        role: formState.role,
+                        distributorId:
+                            formState.role === "DISTRIBUTOR" ? Number(formState.distributorId) : null,
+                    }),
+                });
+                if (!res.ok) throw new Error("Failed to update user");
+
+                await fetch(`/api/admin/users/${editingUser.id}/status`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ status: formState.status }),
+                });
+            } else {
+                const res = await fetch("/api/admin/users", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        name: formState.name,
+                        email: formState.email,
+                        password: formState.password,
+                        role: formState.role,
+                        distributorId:
+                            formState.role === "DISTRIBUTOR" ? Number(formState.distributorId) : null,
+                    }),
+                });
+                if (!res.ok) throw new Error("Failed to create user");
+            }
+            setFormOpen(false);
+            await load();
+        } catch (err) {
+            setFormError(err instanceof Error ? err.message : "Failed to save");
+        }
     };
 
     const requestConfirm = (state: ConfirmState) => setConfirm(state);
@@ -194,11 +216,18 @@ export function UsersView() {
             description: `Are you sure you want to set ${user.name} as ${nextStatus.toLowerCase()}?`,
             confirmLabel: nextStatus === "DISABLED" ? "Disable" : "Enable",
             tone: nextStatus === "DISABLED" ? "danger" : "default",
-            onConfirm: () => {
-                setUsers((prev) =>
-                    prev.map((item) => (item.id === user.id ? { ...item, status: nextStatus } : item)),
-                );
-                setConfirm(null);
+            onConfirm: async () => {
+                try {
+                    const res = await fetch(`/api/admin/users/${user.id}/status`, {
+                        method: "PATCH",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ status: nextStatus }),
+                    });
+                    if (!res.ok) throw new Error("Failed to update status");
+                    await load();
+                } finally {
+                    setConfirm(null);
+                }
             },
         });
     };
@@ -209,9 +238,21 @@ export function UsersView() {
             title: "Reset password",
             description: `Send a password reset to ${user.email}?`,
             confirmLabel: "Send reset",
-            onConfirm: () => {
-                setToast(`Password reset link sent to ${user.email}.`);
-                setConfirm(null);
+            onConfirm: async () => {
+                try {
+                    const res = await fetch(`/api/admin/users/${user.id}/reset-password`, {
+                        method: "POST",
+                    });
+                    if (!res.ok) throw new Error("Failed to reset password");
+                    const json = (await res.json()) as { tempPassword?: string };
+                    if (json.tempPassword) {
+                        setToast(`Temp password for ${user.email}: ${json.tempPassword}`);
+                    } else {
+                        setToast(`Password reset for ${user.email}.`);
+                    }
+                } finally {
+                    setConfirm(null);
+                }
             },
         });
     };
@@ -223,9 +264,14 @@ export function UsersView() {
             description: `This will permanently remove ${user.name}.`,
             confirmLabel: "Delete",
             tone: "danger",
-            onConfirm: () => {
-                setUsers((prev) => prev.filter((item) => item.id !== user.id));
-                setConfirm(null);
+            onConfirm: async () => {
+                try {
+                    const res = await fetch(`/api/admin/users/${user.id}`, { method: "DELETE" });
+                    if (!res.ok) throw new Error("Failed to delete user");
+                    await load();
+                } finally {
+                    setConfirm(null);
+                }
             },
         });
     };
@@ -234,7 +280,7 @@ export function UsersView() {
         <div className="space-y-5">
             <AdminPageHeader
                 title="User Management"
-                description="Manage system users, roles, and access status across regions."
+                description="Manage system users, roles, and access status."
                 actions={
                     <Button size="sm" onClick={openAddDialog}>
                         <Plus className="h-4 w-4" />
@@ -250,7 +296,6 @@ export function UsersView() {
             >
                 <Select options={ROLE_OPTIONS} value={roleFilter} onValueChange={setRoleFilter} />
                 <Select options={STATUS_OPTIONS} value={statusFilter} onValueChange={setStatusFilter} />
-                <Select options={REGION_OPTIONS} value={regionFilter} onValueChange={setRegionFilter} />
             </FiltersBar>
 
             <DataTable
@@ -258,20 +303,30 @@ export function UsersView() {
                     { key: "name", label: "Name" },
                     { key: "email", label: "Email" },
                     { key: "role", label: "Role" },
-                    { key: "region", label: "Region" },
+                    { key: "distributor", label: "Distributor" },
                     { key: "status", label: "Status" },
                     { key: "lastLogin", label: "Last Login" },
                     { key: "actions", label: "Actions", className: "text-right" },
                 ]}
                 rowCount={filteredUsers.length}
-                emptyLabel="No users match the selected filters."
+                emptyLabel={
+                    loading
+                        ? "Loading users…"
+                        : loadError
+                            ? loadError
+                            : "No users match the selected filters."
+                }
             >
                 {filteredUsers.map((user) => (
                     <tr key={user.id} className="border-b border-border hover:bg-muted/50">
                         <td className="px-3 py-2 font-medium">{user.name}</td>
                         <td className="px-3 py-2 text-sm text-muted-foreground">{user.email}</td>
                         <td className="px-3 py-2">{user.role.replace("_", " ")}</td>
-                        <td className="px-3 py-2 capitalize">{user.regionId}</td>
+                        <td className="px-3 py-2 text-sm text-muted-foreground">
+                            {user.role === "DISTRIBUTOR" && user.distributorId
+                                ? distributorNameById.get(user.distributorId) ?? user.distributorId
+                                : "—"}
+                        </td>
                         <td className="px-3 py-2">
                             <Badge variant={user.status === "ACTIVE" ? "success" : "danger"}>
                                 {user.status === "ACTIVE" ? "Active" : "Disabled"}
@@ -342,18 +397,37 @@ export function UsersView() {
                             </FormControl>
                         </FormItem>
                         <FormItem>
-                            <FormLabel>Region</FormLabel>
+                            <FormLabel>Distributor</FormLabel>
                             <FormControl>
                                 <Select
-                                    options={REGION_OPTIONS.filter((item) => item.value !== "all")}
-                                    value={formState.regionId}
+                                    options={[
+                                        { value: "", label: "—" },
+                                        ...distributors.map((d) => ({ value: d.id, label: d.name })),
+                                    ]}
+                                    value={formState.distributorId}
                                     onValueChange={(value) =>
-                                        setFormState({ ...formState, regionId: value })
+                                        setFormState({ ...formState, distributorId: value })
                                     }
                                 />
                             </FormControl>
                         </FormItem>
                     </div>
+
+                    {!editingUser ? (
+                        <FormItem>
+                            <FormLabel>Password</FormLabel>
+                            <FormControl>
+                                <Input
+                                    value={formState.password}
+                                    onChange={(event) =>
+                                        setFormState({ ...formState, password: event.target.value })
+                                    }
+                                    placeholder="Temporary password"
+                                    type="password"
+                                />
+                            </FormControl>
+                        </FormItem>
+                    ) : null}
                     <FormItem>
                         <FormLabel>Status</FormLabel>
                         <FormControl>

@@ -7,7 +7,7 @@ export type AdminUser = {
     name: string;
     email: string;
     role: AdminRole;
-    regionId: string;
+    distributorId?: string | null;
     status: UserStatus;
     lastLoginAt: string;
 };
@@ -27,42 +27,31 @@ export type Permission = {
 export type Factory = {
     id: string;
     name: string;
-    address: string;
     lat: number;
     lng: number;
-    status: "ACTIVE" | "INACTIVE";
 };
 
 export type Warehouse = {
     id: string;
     name: string;
-    factoryId?: string;
-    capacityTon: number;
-    address: string;
+    capacityTons: number;
     lat: number;
     lng: number;
-    status: "ACTIVE" | "INACTIVE";
 };
 
 export type DistributorEntity = {
     id: string;
     name: string;
-    phone: string;
-    address: string;
     lat: number;
     lng: number;
-    regionId: string;
-    status: "ACTIVE" | "INACTIVE";
+    serviceRadiusKm: number;
 };
 
 export type Outlet = {
     id: string;
-    distributorId: string;
     name: string;
-    address: string;
     lat: number;
     lng: number;
-    status: "ACTIVE" | "INACTIVE";
 };
 
 export type ThresholdSetting = {

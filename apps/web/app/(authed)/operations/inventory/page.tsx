@@ -1,8 +1,8 @@
-export default function Page() {
-    return (
-        <div className=\"space-y-2\">
-            <h1 className=\"text-xl font-semibold\">All Inventory</h1>
-            <p className=\"text-sm text-muted-foreground\">Placeholder page for inventory snapshots.</p>
-        </div>
-    );
+import { requireMe } from "@/lib/server/auth";
+import { InventoryClient } from "@/components/modules/operations/inventory-client";
+
+export default async function Page() {
+    const me = await requireMe(["OPERATOR", "SUPER_ADMIN", "MANAGEMENT"]);
+    return <InventoryClient role={me.role} />;
 }
+

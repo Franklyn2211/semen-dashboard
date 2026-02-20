@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
     Bell,
@@ -15,7 +15,7 @@ import {
     LogOut,
     MapPin,
     Map,
-    Menu,
+    PanelLeft,
     PieChart,
     Route,
     ScrollText,
@@ -26,14 +26,12 @@ import {
     Users,
 } from "lucide-react";
 import type { Me } from "@/lib/types";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 type NavItem = {
     href: string;
     label: string;
     icon: ReactNode;
-    roles: Me["role"][];
 };
 
 type NavSection = {
@@ -42,151 +40,203 @@ type NavSection = {
     items: NavItem[];
 };
 
-const NAV_SECTIONS: NavSection[] = [
-    {
-        id: "dashboard",
-        label: "Dashboard",
-        items: [
-            {
-                href: "/dashboard",
-                label: "Dashboard",
-                icon: <LayoutDashboard className="h-4 w-4" />,
-                roles: ["ADMIN", "OPS", "EXEC", "SUPER_ADMIN"],
-            },
-        ],
-    },
-    {
-        id: "planning",
-        label: "Planning",
-        items: [
-            {
-                href: "/planning/site-selection",
-                label: "Site Selection",
-                icon: <MapPin className="h-4 w-4" />,
-                roles: ["ADMIN", "OPS", "EXEC", "SUPER_ADMIN"],
-            },
-            {
-                href: "/planning/expansion-analysis",
-                label: "Expansion Analysis",
-                icon: <Route className="h-4 w-4" />,
-                roles: ["ADMIN", "OPS", "EXEC", "SUPER_ADMIN"],
-            },
-            {
-                href: "/planning/market-analysis",
-                label: "Market Analysis",
-                icon: <LineChart className="h-4 w-4" />,
-                roles: ["ADMIN", "OPS", "EXEC", "SUPER_ADMIN"],
-            },
-        ],
-    },
-    {
-        id: "operations",
-        label: "Operations",
-        items: [
-            {
-                href: "/operations/global-overview",
-                label: "Global Operations Overview",
-                icon: <Globe className="h-4 w-4" />,
-                roles: ["ADMIN", "OPS", "SUPER_ADMIN"],
-            },
-            {
-                href: "/operations/shipments",
-                label: "All Shipments",
-                icon: <Truck className="h-4 w-4" />,
-                roles: ["ADMIN", "OPS", "SUPER_ADMIN"],
-            },
-            {
-                href: "/operations/inventory",
-                label: "All Inventory",
-                icon: <Boxes className="h-4 w-4" />,
-                roles: ["ADMIN", "OPS", "SUPER_ADMIN"],
-            },
-            {
-                href: "/operations/order-audit",
-                label: "Order Audit",
-                icon: <ClipboardList className="h-4 w-4" />,
-                roles: ["ADMIN", "OPS", "SUPER_ADMIN"],
-            },
-            {
-                href: "/operations/activity-log",
-                label: "Activity & System Log",
-                icon: <ScrollText className="h-4 w-4" />,
-                roles: ["ADMIN", "OPS", "SUPER_ADMIN"],
-            },
-        ],
-    },
-    {
-        id: "executive",
-        label: "Executive",
-        items: [
-            {
-                href: "/executive/performance",
-                label: "Performance Overview",
-                icon: <TrendingUp className="h-4 w-4" />,
-                roles: ["ADMIN", "EXEC", "SUPER_ADMIN"],
-            },
-            {
-                href: "/executive/regional",
-                label: "Regional Performance",
-                icon: <Map className="h-4 w-4" />,
-                roles: ["ADMIN", "EXEC", "SUPER_ADMIN"],
-            },
-            {
-                href: "/executive/sales-summary",
-                label: "Sales Summary",
-                icon: <PieChart className="h-4 w-4" />,
-                roles: ["ADMIN", "EXEC", "SUPER_ADMIN"],
-            },
-        ],
-    },
-    {
-        id: "administration",
-        label: "Administration",
-        items: [
-            {
-                href: "/admin/users",
-                label: "User Management",
-                icon: <Users className="h-4 w-4" />,
-                roles: ["SUPER_ADMIN"],
-            },
-            {
-                href: "/admin/rbac",
-                label: "Role & Access Control",
-                icon: <ShieldCheck className="h-4 w-4" />,
-                roles: ["SUPER_ADMIN"],
-            },
-            {
-                href: "/admin/master-data",
-                label: "Master Data",
-                icon: <Database className="h-4 w-4" />,
-                roles: ["SUPER_ADMIN"],
-            },
-            {
-                href: "/admin/thresholds",
-                label: "Threshold Settings",
-                icon: <Sliders className="h-4 w-4" />,
-                roles: ["SUPER_ADMIN"],
-            },
-            {
-                href: "/admin/alerts",
-                label: "Alert Configuration",
-                icon: <Bell className="h-4 w-4" />,
-                roles: ["SUPER_ADMIN"],
-            },
-            {
-                href: "/admin/logs",
-                label: "System Logs",
-                icon: <ScrollText className="h-4 w-4" />,
-                roles: ["SUPER_ADMIN"],
-            },
-        ],
-    },
-];
+const NAV_DASHBOARD: NavSection = {
+    id: "dashboard",
+    label: "Dashboard",
+    items: [
+        {
+            href: "/dashboard",
+            label: "Dashboard",
+            icon: <LayoutDashboard className="h-4 w-4" />,
+        },
+    ],
+};
+
+const NAV_PLANNING: NavSection = {
+    id: "planning",
+    label: "Planning",
+    items: [
+        {
+            href: "/planning/site-selection",
+            label: "Site Selection",
+            icon: <MapPin className="h-4 w-4" />,
+        },
+        {
+            href: "/planning/expansion-analysis",
+            label: "Expansion Analysis",
+            icon: <Route className="h-4 w-4" />,
+        },
+        {
+            href: "/planning/market-analysis",
+            label: "Market Analysis",
+            icon: <LineChart className="h-4 w-4" />,
+        },
+    ],
+};
+
+const NAV_OPERATIONS_ADMIN_MONITORING: NavSection = {
+    id: "operations",
+    label: "Operations",
+    items: [
+        {
+            href: "/operations/global-overview",
+            label: "Global Operations Overview",
+            icon: <Globe className="h-4 w-4" />,
+        },
+        {
+            href: "/operations/shipments",
+            label: "All Shipments",
+            icon: <Truck className="h-4 w-4" />,
+        },
+        {
+            href: "/operations/inventory",
+            label: "All Inventory",
+            icon: <Boxes className="h-4 w-4" />,
+        },
+        {
+            href: "/operations/order-audit",
+            label: "Order Audit",
+            icon: <ClipboardList className="h-4 w-4" />,
+        },
+        {
+            href: "/operations/activity-log",
+            label: "Activity & System Log",
+            icon: <ScrollText className="h-4 w-4" />,
+        },
+    ],
+};
+
+const NAV_OPERATIONS_OPERATOR: NavSection = {
+    id: "operations",
+    label: "Operations",
+    items: [
+        {
+            href: "/operations/inventory",
+            label: "Inventory",
+            icon: <Boxes className="h-4 w-4" />,
+        },
+        {
+            href: "/operations/orders",
+            label: "Order",
+            icon: <ClipboardList className="h-4 w-4" />,
+        },
+        {
+            href: "/operations/shipments",
+            label: "Shipment",
+            icon: <Truck className="h-4 w-4" />,
+        },
+        {
+            href: "/operations/logistics-map",
+            label: "Live Logistic",
+            icon: <Map className="h-4 w-4" />,
+        },
+    ],
+};
+
+const NAV_ISSUES: NavSection = {
+    id: "issues",
+    label: "Issues",
+    items: [
+        {
+            href: "/issues",
+            label: "Issues",
+            icon: <ScrollText className="h-4 w-4" />,
+        },
+    ],
+};
+
+const NAV_DISTRIBUTOR: NavSection = {
+    id: "distributor",
+    label: "Distributor",
+    items: [
+        {
+            href: "/distributor/inventory",
+            label: "My Inventory",
+            icon: <Boxes className="h-4 w-4" />,
+        },
+        {
+            href: "/distributor/order",
+            label: "Order Semen",
+            icon: <ClipboardList className="h-4 w-4" />,
+        },
+        {
+            href: "/distributor/orders",
+            label: "My Orders",
+            icon: <ScrollText className="h-4 w-4" />,
+        },
+        {
+            href: "/distributor/shipment-tracking",
+            label: "Shipment Tracking",
+            icon: <Truck className="h-4 w-4" />,
+        },
+        {
+            href: "/distributor/transactions",
+            label: "Transaction History",
+            icon: <LineChart className="h-4 w-4" />,
+        },
+    ],
+};
+
+const NAV_EXECUTIVE: NavSection = {
+    id: "executive",
+    label: "Executive",
+    items: [
+        {
+            href: "/executive/performance",
+            label: "Performance Overview",
+            icon: <TrendingUp className="h-4 w-4" />,
+        },
+        {
+            href: "/executive/regional",
+            label: "Regional Performance",
+            icon: <Map className="h-4 w-4" />,
+        },
+        {
+            href: "/executive/sales-summary",
+            label: "Sales Summary",
+            icon: <PieChart className="h-4 w-4" />,
+        },
+    ],
+};
+
+const NAV_ADMIN: NavSection = {
+    id: "administration",
+    label: "Administration",
+    items: [
+        {
+            href: "/admin/users",
+            label: "User Management",
+            icon: <Users className="h-4 w-4" />,
+        },
+        {
+            href: "/admin/rbac",
+            label: "Role & Access Control",
+            icon: <ShieldCheck className="h-4 w-4" />,
+        },
+        {
+            href: "/admin/master-data",
+            label: "Master Data",
+            icon: <Database className="h-4 w-4" />,
+        },
+        {
+            href: "/admin/thresholds",
+            label: "Threshold Settings",
+            icon: <Sliders className="h-4 w-4" />,
+        },
+        {
+            href: "/admin/alerts",
+            label: "Alert Configuration",
+            icon: <Bell className="h-4 w-4" />,
+        },
+        {
+            href: "/admin/logs",
+            label: "System Logs",
+            icon: <ScrollText className="h-4 w-4" />,
+        },
+    ],
+};
 
 const ROLE_BADGE: Record<string, string> = {
-    ADMIN: "bg-blue-500/20 text-blue-200",
-    OPS: "bg-green-500/20 text-green-200",
-    EXEC: "bg-purple-500/20 text-purple-200",
     SUPER_ADMIN: "bg-amber-500/20 text-amber-200",
     MANAGEMENT: "bg-slate-500/20 text-slate-200",
     OPERATOR: "bg-emerald-500/20 text-emerald-200",
@@ -198,13 +248,46 @@ export function AppShell({ user, children }: { user: Me; children: React.ReactNo
     const router = useRouter();
     const [busy, setBusy] = useState(false);
     const [mobileOpen, setMobileOpen] = useState(false);
+    // undefined = loading, null = no config / failed to load (fail-open)
+    const [sidebar, setSidebar] = useState<string[] | null | undefined>(undefined);
+
+    useEffect(() => {
+        setSidebar(undefined);
+        let alive = true;
+        fetch("/api/rbac/me")
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d) => {
+                if (!alive || !d) return;
+                const config = (d as { config?: { sidebar?: string[] } }).config;
+                if (Array.isArray(config?.sidebar)) {
+                    setSidebar(config.sidebar);
+                } else {
+                    setSidebar(null);
+                }
+            })
+            .catch(() => {
+                // If RBAC endpoint is unavailable, fall back to showing all sections.
+                if (alive) setSidebar(null);
+            });
+        return () => {
+            alive = false;
+        };
+    }, [user.id]);
 
     const sections = useMemo(() => {
-        return NAV_SECTIONS.map((section) => ({
-            ...section,
-            items: section.items.filter((item) => item.roles.includes(user.role)),
-        })).filter((section) => section.items.length > 0);
-    }, [user.role]);
+        if (sidebar === undefined) return [];
+
+        const byRole: Record<string, NavSection[]> = {
+            SUPER_ADMIN: [NAV_DASHBOARD, NAV_PLANNING, NAV_OPERATIONS_ADMIN_MONITORING, NAV_EXECUTIVE, NAV_ADMIN],
+            MANAGEMENT: [NAV_DASHBOARD, NAV_PLANNING, NAV_OPERATIONS_ADMIN_MONITORING, NAV_EXECUTIVE],
+            OPERATOR: [NAV_DASHBOARD, NAV_OPERATIONS_OPERATOR, NAV_ISSUES],
+            DISTRIBUTOR: [NAV_DASHBOARD, NAV_DISTRIBUTOR],
+        };
+        const base = byRole[user.role] ?? [NAV_DASHBOARD];
+
+        const allowed = Array.isArray(sidebar) ? new Set(sidebar) : null;
+        return base.filter((section) => (allowed ? allowed.has(section.label) : true));
+    }, [sidebar, user.role]);
 
     async function logout() {
         setBusy(true);
@@ -289,8 +372,8 @@ export function AppShell({ user, children }: { user: Me; children: React.ReactNo
     );
 
     return (
-        <div className="flex min-h-screen bg-background text-foreground">
-            <aside className="hidden w-64 shrink-0 md:flex md:flex-col">
+        <div className="flex min-h-dvh">
+            <aside className="hidden w-64 shrink-0 md:block">
                 <SidebarContent />
             </aside>
 
@@ -312,17 +395,14 @@ export function AppShell({ user, children }: { user: Me; children: React.ReactNo
                         className="rounded-md p-1.5 text-muted-foreground hover:bg-muted md:hidden"
                         onClick={() => setMobileOpen((v) => !v)}
                     >
-                        <Menu className="h-5 w-5" />
+                        <PanelLeft className="h-5 w-5" />
+                        <span className="sr-only">Toggle navigation</span>
                     </button>
                     <div className="flex-1" />
                     <div className="hidden items-center gap-1.5 text-sm text-muted-foreground sm:flex">
                         <span className="h-2 w-2 rounded-full bg-green-500 inline-block" />
                         {user.email}
                     </div>
-                    <Button variant="outline" size="sm" onClick={logout} disabled={busy}>
-                        <LogOut className="h-4 w-4" />
-                        Sign out
-                    </Button>
                 </header>
 
                 <main className="min-w-0 flex-1 p-5">{children}</main>

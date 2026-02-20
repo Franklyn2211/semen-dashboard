@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
+import { MapPin } from "lucide-react";
 import dynamic from "next/dynamic";
 
 const PlanningMap = dynamic(() => import("./planning-map"), { ssr: false });
@@ -82,17 +84,21 @@ export function PlanningClient({ mode }: { mode: PlanningMode }) {
     }>({ warehouses: [], distributors: [] });
 
     useEffect(() => {
-        // Reset irrelevant state when switching focus
-        if (mode !== "expansion") {
-            setWhitespaceOn(false);
-            setWhitespace([]);
-            setCatchmentEntity(undefined);
-            setCatchment(null);
-        }
-        if (mode !== "site") {
-            setClicked(null);
-            setProfile(null);
-        }
+        // Reset irrelevant state when switching focus.
+        // Schedule the updates to avoid synchronous setState in an effect body (eslint).
+        const t = setTimeout(() => {
+            if (mode !== "expansion") {
+                setWhitespaceOn(false);
+                setWhitespace([]);
+                setCatchmentEntity(undefined);
+                setCatchment(null);
+            }
+            if (mode !== "site") {
+                setClicked(null);
+                setProfile(null);
+            }
+        }, 0);
+        return () => clearTimeout(t);
     }, [mode]);
 
     useEffect(() => {
@@ -162,24 +168,23 @@ export function PlanningClient({ mode }: { mode: PlanningMode }) {
     }, [entities]);
 
     return (
-        <div className="space-y-5">
-            {/* Page header */}
-            <div>
-                <h1 className="text-lg font-semibold">
-                    {mode === "site"
+        <div className="space-y-6">
+            <PageHeader
+                title={
+                    mode === "site"
                         ? "Site Selection"
                         : mode === "expansion"
                             ? "Expansion Analysis"
-                            : "Market Analysis"}
-                </h1>
-                <p className="text-sm text-muted-foreground">
-                    {mode === "site"
+                            : "Market Analysis"
+                }
+                description={
+                    mode === "site"
                         ? "Evaluasi lokasi: Heatmap + Site Profiling"
                         : mode === "expansion"
                             ? "Analisis ekspansi: Whitespace + Catchment Simulation"
-                            : "Demand insight berbasis Heatmap"}
-                </p>
-            </div>
+                            : "Demand insight berbasis Heatmap"
+                }
+            />
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
                 <div className="lg:col-span-2">
@@ -207,7 +212,7 @@ export function PlanningClient({ mode }: { mode: PlanningMode }) {
                                             });
                                         }}
                                     >
-                                        {whitespaceOn ? "✅ Whitespace" : "Whitespace"}
+                                        {whitespaceOn ? "Whitespace (Aktif)" : "Whitespace"}
                                     </Button>
                                 ) : null}
 
@@ -251,8 +256,9 @@ export function PlanningClient({ mode }: { mode: PlanningMode }) {
                                     Klik peta untuk mengevaluasi lokasi kandidat.
                                 </div>
                                 {clicked && (
-                                    <div className="rounded-lg bg-muted/60 px-3 py-2 text-xs font-mono text-muted-foreground">
-                                        📍 {clicked.lat.toFixed(5)}, {clicked.lng.toFixed(5)}
+                                    <div className="flex items-center gap-1.5 rounded-lg bg-muted/60 px-3 py-2 text-xs font-mono text-muted-foreground">
+                                        <MapPin className="h-3 w-3 shrink-0" />
+                                        {clicked.lat.toFixed(5)}, {clicked.lng.toFixed(5)}
                                     </div>
                                 )}
                                 {profile ? (

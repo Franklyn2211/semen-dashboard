@@ -24,68 +24,76 @@ const RESOURCES: PermissionResource[] = [
     "Administration",
 ];
 
-const DEFAULT_PERMISSIONS: Record<AdminRole, Permission[]> = {
-    SUPER_ADMIN: RESOURCES.map((resource) => ({
-        resource,
-        actions: { view: true, create: true, edit: true, delete: true },
-    })),
-    MANAGEMENT: [
-        { resource: "Planning", actions: { view: true, create: true, edit: true, delete: false } },
-        { resource: "Operations", actions: { view: true, create: false, edit: false, delete: false } },
-        { resource: "Executive", actions: { view: true, create: false, edit: false, delete: false } },
-        { resource: "Administration", actions: { view: false, create: false, edit: false, delete: false } },
-    ],
-    OPERATOR: [
-        { resource: "Planning", actions: { view: true, create: false, edit: false, delete: false } },
-        { resource: "Operations", actions: { view: true, create: true, edit: true, delete: false } },
-        { resource: "Executive", actions: { view: false, create: false, edit: false, delete: false } },
-        { resource: "Administration", actions: { view: false, create: false, edit: false, delete: false } },
-    ],
-    DISTRIBUTOR: [
-        { resource: "Planning", actions: { view: true, create: false, edit: false, delete: false } },
-        { resource: "Operations", actions: { view: false, create: false, edit: false, delete: false } },
-        { resource: "Executive", actions: { view: false, create: false, edit: false, delete: false } },
-        { resource: "Administration", actions: { view: false, create: false, edit: false, delete: false } },
-    ],
-};
-
-const DEFAULT_SIDEBAR: Record<AdminRole, string[]> = {
-    SUPER_ADMIN: ["Dashboard", "Administration"],
-    MANAGEMENT: ["Dashboard", "Planning", "Executive"],
-    OPERATOR: ["Dashboard", "Operations", "Planning"],
-    DISTRIBUTOR: ["Dashboard", "Planning"],
-};
-
-type SidebarModule = "Dashboard" | "Planning" | "Operations" | "Executive" | "Administration";
+type SidebarModule = "Dashboard" | "Planning" | "Operations" | "Issues" | "Distributor" | "Executive" | "Administration";
 const SIDEBAR_MODULES: SidebarModule[] = [
     "Dashboard",
     "Planning",
     "Operations",
+    "Issues",
+    "Distributor",
     "Executive",
     "Administration",
 ];
 
 export function RbacView() {
     const [activeRole, setActiveRole] = useState<AdminRole>("SUPER_ADMIN");
-    const [permissionsByRole, setPermissionsByRole] = useState<Record<AdminRole, Permission[]>>(
-        DEFAULT_PERMISSIONS,
-    );
-    const [sidebarByRole, setSidebarByRole] = useState<Record<AdminRole, string[]>>(DEFAULT_SIDEBAR);
+    const [permissionsByRole, setPermissionsByRole] = useState<Record<AdminRole, Permission[]>>(() => {
+        const makeEmpty = () =>
+            RESOURCES.map((resource) => ({
+                resource,
+                actions: { view: false, create: false, edit: false, delete: false },
+            }));
+        return {
+            SUPER_ADMIN: makeEmpty(),
+            MANAGEMENT: makeEmpty(),
+            OPERATOR: makeEmpty(),
+            DISTRIBUTOR: makeEmpty(),
+        };
+    });
+    const [sidebarByRole, setSidebarByRole] = useState<Record<AdminRole, string[]>>({
+        SUPER_ADMIN: [],
+        MANAGEMENT: [],
+        OPERATOR: [],
+        DISTRIBUTOR: [],
+    });
     const [saved, setSaved] = useState(false);
+    const [loadError, setLoadError] = useState<string | null>(null);
 
     useEffect(() => {
-        const stored = localStorage.getItem("admin_rbac");
-        if (!stored) return;
-        try {
-            const parsed = JSON.parse(stored) as {
-                permissions: Record<AdminRole, Permission[]>;
-                sidebar: Record<AdminRole, string[]>;
-            };
-            if (parsed?.permissions) setPermissionsByRole(parsed.permissions);
-            if (parsed?.sidebar) setSidebarByRole(parsed.sidebar);
-        } catch {
-            return;
+        async function load() {
+            setLoadError(null);
+            try {
+                const res = await fetch("/api/admin/rbac");
+                if (!res.ok) throw new Error("Failed to load RBAC config");
+                const json = (await res.json()) as {
+                    items: Array<{ role: AdminRole; config: { permissions?: Record<string, Permission["actions"]>; sidebar?: string[] } }>;
+                };
+                const nextPerms: Record<AdminRole, Permission[]> = { ...permissionsByRole };
+                const nextSidebar: Record<AdminRole, string[]> = { ...sidebarByRole };
+
+                (json.items ?? []).forEach((item) => {
+                    const permObj = item.config?.permissions ?? {};
+                    nextPerms[item.role] = RESOURCES.map((resource) => ({
+                        resource,
+                        actions: {
+                            view: !!permObj[resource]?.view,
+                            create: !!permObj[resource]?.create,
+                            edit: !!permObj[resource]?.edit,
+                            delete: !!permObj[resource]?.delete,
+                        },
+                    }));
+                    nextSidebar[item.role] = item.config?.sidebar ?? [];
+                });
+
+                setPermissionsByRole(nextPerms);
+                setSidebarByRole(nextSidebar);
+                setSaved(true);
+            } catch (err) {
+                setLoadError(err instanceof Error ? err.message : "Failed to load RBAC config");
+            }
         }
+        void load();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const activePermissions = permissionsByRole[activeRole];
@@ -119,12 +127,26 @@ export function RbacView() {
         });
     };
 
-    const handleSave = () => {
-        localStorage.setItem(
-            "admin_rbac",
-            JSON.stringify({ permissions: permissionsByRole, sidebar: sidebarByRole }),
-        );
-        setSaved(true);
+    const handleSave = async () => {
+        setLoadError(null);
+        try {
+            const perms = permissionsByRole[activeRole];
+            const permissions: Record<string, Permission["actions"]> = {};
+            perms.forEach((p) => {
+                permissions[p.resource] = p.actions;
+            });
+            const config = { permissions, sidebar: sidebarByRole[activeRole] ?? [] };
+            const res = await fetch(`/api/admin/rbac/${activeRole}`, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(config),
+            });
+            if (!res.ok) throw new Error("Failed to save RBAC config");
+            setSaved(true);
+        } catch (err) {
+            setLoadError(err instanceof Error ? err.message : "Failed to save RBAC config");
+            setSaved(false);
+        }
     };
 
     return (
@@ -148,6 +170,12 @@ export function RbacView() {
             <FiltersBar label="Role">
                 <Select options={ROLE_OPTIONS} value={activeRole} onValueChange={(value) => setActiveRole(value as AdminRole)} />
             </FiltersBar>
+
+            {loadError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                    {loadError}
+                </div>
+            ) : null}
 
             <DataTable
                 columns={[

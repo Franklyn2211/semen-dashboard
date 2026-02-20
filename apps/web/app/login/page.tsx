@@ -6,15 +6,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 const DEMO_ACCOUNTS = [
-    { email: "admin@cementops.local", password: "admin123", role: "ADMIN" },
-    { email: "ops@cementops.local", password: "ops123", role: "OPS" },
-    { email: "exec@cementops.local", password: "exec123", role: "EXEC" },
+    { email: "superadmin@cementops.local", password: "super123", role: "SUPER_ADMIN" },
+    { email: "management@cementops.local", password: "management123", role: "MANAGEMENT" },
+    { email: "operator@cementops.local", password: "operator123", role: "OPERATOR" },
+    { email: "distributor@cementops.local", password: "distributor123", role: "DISTRIBUTOR" },
 ];
 
 export default function LoginPage() {
     const router = useRouter();
-    const [email, setEmail] = useState("admin@cementops.local");
-    const [password, setPassword] = useState("admin123");
+    const [email, setEmail] = useState("superadmin@cementops.local");
+    const [password, setPassword] = useState("super123");
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
 

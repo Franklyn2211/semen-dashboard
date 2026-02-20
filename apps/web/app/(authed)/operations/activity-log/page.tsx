@@ -1,8 +1,7 @@
-export default function Page() {
-    return (
-        <div className=\"space-y-2\">
-            <h1 className=\"text-xl font-semibold\">Activity & System Log</h1>
-            <p className=\"text-sm text-muted-foreground\">Placeholder page for operational activity logs.</p>
-        </div>
-    );
+import { requireMe } from "@/lib/server/auth";
+import { ActivityLogClient } from "@/components/modules/operations/activity-log-client";
+
+export default async function Page() {
+    await requireMe(["OPERATOR", "SUPER_ADMIN", "MANAGEMENT"]);
+    return <ActivityLogClient />;
 }
