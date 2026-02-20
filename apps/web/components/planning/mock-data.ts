@@ -1,11 +1,13 @@
 import type {
     DemandPoint,
+    DemandDriver,
     Distributor,
     LatLng,
     MonthlyDemand,
     Project,
     ProjectDensity,
     RegionComparison,
+    RegionGrowth,
     RegionMetric,
     SalesCorrelation,
     Warehouse,
@@ -241,4 +243,20 @@ export const salesCorrelation: SalesCorrelation[] = [
     { demand: 79, sales: 72, region: "Bekasi" },
     { demand: 85, sales: 78, region: "East Jakarta" },
     { demand: 88, sales: 82, region: "Bekasi" },
+];
+
+export const regionGrowth: RegionGrowth[] = [
+    { region: "Bekasi", growthPct: 12.6 },
+    { region: "Jakarta", growthPct: 8.2 },
+    { region: "Tangerang", growthPct: 4.3 },
+    { region: "Bogor", growthPct: 1.8 },
+    { region: "Karawang", growthPct: 0.9 },
+    { region: "Depok", growthPct: -1.6 },
+];
+
+export const demandDrivers: DemandDriver[] = [
+    { name: "Project Density", value: 34 },
+    { name: "Population Growth", value: 22 },
+    { name: "Infrastructure Activity", value: 26 },
+    { name: "Historical Orders", value: 18 },
 ];

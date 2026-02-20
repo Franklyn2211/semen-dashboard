@@ -24,12 +24,11 @@ const RESOURCES: PermissionResource[] = [
     "Administration",
 ];
 
-type SidebarModule = "Dashboard" | "Planning" | "Operations" | "Issues" | "Distributor" | "Executive" | "Administration";
+type SidebarModule = "Dashboard" | "Planning" | "Operations" | "Distributor" | "Executive" | "Administration";
 const SIDEBAR_MODULES: SidebarModule[] = [
     "Dashboard",
     "Planning",
     "Operations",
-    "Issues",
     "Distributor",
     "Executive",
     "Administration",
