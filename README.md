@@ -51,9 +51,10 @@ npm run dev
 
 ## Demo Accounts
 
-- ADMIN: `admin@cementops.local` / `admin123`
-- OPS: `ops@cementops.local` / `ops123`
-- EXEC: `exec@cementops.local` / `exec123`
+- SUPER_ADMIN: `superadmin@cementops.local` / `super123`
+- MANAGEMENT: `management@cementops.local` / `management123`
+- OPERATOR: `operator@cementops.local` / `operator123`
+- DISTRIBUTOR: `distributor@cementops.local` / `distributor123`
 
 ## Scripts
 
