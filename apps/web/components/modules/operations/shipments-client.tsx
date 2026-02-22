@@ -60,6 +60,8 @@ export function ShipmentsClient({ role }: { role: string }) {
     const [items, setItems] = useState<ShipmentRow[]>([]);
     const [selectedId, setSelectedId] = useState<number | null>(null);
     const [detail, setDetail] = useState<ShipmentDetail | null>(null);
+    const [page, setPage] = useState(1);
+    const pageSize = 10;
 
     const [overrideEnabled, setOverrideEnabled] = useState(false);
     const canEdit = role === "OPERATOR" || (role === "SUPER_ADMIN" && overrideEnabled);
@@ -82,13 +84,13 @@ export function ShipmentsClient({ role }: { role: string }) {
 
     const refreshList = useCallback(async () => {
         try {
-            const r = await fetch("/api/ops/shipments?page=1&pageSize=200");
+            const r = await fetch(`/api/ops/shipments?page=${page}&pageSize=${pageSize}`);
             const d = await r.json();
             setItems((d.items ?? []) as ShipmentRow[]);
         } catch {
             setItems([]);
         }
-    }, []);
+    }, [page, pageSize]);
 
     useEffect(() => {
         refreshList();
@@ -103,6 +105,10 @@ export function ShipmentsClient({ role }: { role: string }) {
             .then((d) => setTrucks((d.items ?? []) as Truck[]))
             .catch(() => setTrucks([]));
     }, [refreshList]);
+
+    useEffect(() => {
+        setSelectedId(null);
+    }, [page]);
 
     useEffect(() => {
         if (!selectedId) {
@@ -318,6 +324,15 @@ export function ShipmentsClient({ role }: { role: string }) {
                                         ) : null}
                                     </TBody>
                                 </Table>
+                            </div>
+                            <div className="mt-3 flex items-center justify-between">
+                                <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+                                    Previous
+                                </Button>
+                                <div className="text-xs text-muted-foreground">Page {page}</div>
+                                <Button variant="outline" size="sm" disabled={items.length < pageSize} onClick={() => setPage((p) => p + 1)}>
+                                    Next
+                                </Button>
                             </div>
                         </CardContent>
                     </Card>

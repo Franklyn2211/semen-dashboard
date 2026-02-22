@@ -1132,8 +1132,8 @@ func (a *App) handleOpsTrucks(w http.ResponseWriter, r *http.Request) {
 func (a *App) handleOpsInventory(w http.ResponseWriter, r *http.Request) {
 	// Join stock with thresholds to compute a simple status.
 	rows, err := a.db.Query(r.Context(), `
-    SELECT w.id, w.name,
-           s.cement_type, s.quantity_tons, s.updated_at,
+    SELECT w.id, w.name, w.capacity_tons,
+	    s.cement_type, s.quantity_tons, s.updated_at,
            t.min_stock, t.safety_stock, t.warning_level, t.critical_level, t.lead_time_days
     FROM stock_levels s
     JOIN warehouses w ON w.id = s.warehouse_id
@@ -1155,11 +1155,12 @@ func (a *App) handleOpsInventory(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var wid int64
 		var wname, ct string
+		var cap float64
 		var qty float64
 		var updated time.Time
 		var min, safety, warn, critical *float64
 		var lead *int
-		_ = rows.Scan(&wid, &wname, &ct, &qty, &updated, &min, &safety, &warn, &critical, &lead)
+		_ = rows.Scan(&wid, &wname, &cap, &ct, &qty, &updated, &min, &safety, &warn, &critical, &lead)
 
 		status := "OK"
 		if critical != nil && qty <= *critical {
@@ -1171,6 +1172,7 @@ func (a *App) handleOpsInventory(w http.ResponseWriter, r *http.Request) {
 		it := map[string]any{
 			"warehouseId":   wid,
 			"warehouseName": wname,
+			"capacityTons":  cap,
 			"cementType":    ct,
 			"quantityTons":  qty,
 			"updatedAt":     updated,

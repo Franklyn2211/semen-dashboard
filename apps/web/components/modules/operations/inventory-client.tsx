@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Input } from "@/components/ui/input";
 import { Select, type SelectOption } from "@/components/ui/select";
 import { Table, TBody, TD, TH, THead, TR } from "@/components/ui/table";
+import { Dialog, DialogBody, DialogCard, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 type LogisticsMap = {
 	warehouses: { id: number; name: string }[];
@@ -55,11 +56,13 @@ export function InventoryClient({ role }: { role: string }) {
 	const [items, setItems] = useState<InventoryRow[]>([]);
 	const [logistics, setLogistics] = useState<LogisticsMap | null>(null);
 	const canAdjust = role === "OPERATOR";
+	const [modalOpen, setModalOpen] = useState(false);
+	const [page, setPage] = useState(1);
+	const pageSize = 10;
 
 	const [adjustWarehouseId, setAdjustWarehouseId] = useState<string>("");
 	const [adjustCementType, setAdjustCementType] = useState<string>("");
 	const [adjustDelta, setAdjustDelta] = useState<string>("");
-	const [adjustReason, setAdjustReason] = useState<string>("");
 	const [adjustBusy, setAdjustBusy] = useState(false);
 	const [adjustError, setAdjustError] = useState<string | null>(null);
 
@@ -104,6 +107,25 @@ export function InventoryClient({ role }: { role: string }) {
 		return opts;
 	}, [logistics]);
 
+	const selectedRow = useMemo(() => {
+		const wid = Number(adjustWarehouseId);
+		if (!wid || !adjustCementType) return null;
+		return items.find((it) => it.warehouseId === wid && it.cementType === adjustCementType) ?? null;
+	}, [adjustCementType, adjustWarehouseId, items]);
+
+	const nextQuantity = useMemo(() => {
+		const addQty = Number(adjustDelta);
+		if (!selectedRow || Number.isNaN(addQty)) return null;
+		return Number(selectedRow.quantityTons) + addQty;
+	}, [adjustDelta, selectedRow]);
+
+	const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
+	const pagedItems = items.slice((page - 1) * pageSize, page * pageSize);
+
+	useEffect(() => {
+		if (page > totalPages) setPage(totalPages);
+	}, [page, totalPages]);
+
 	async function submitAdjust() {
 		if (!canAdjust) return;
 		setAdjustBusy(true);
@@ -112,7 +134,7 @@ export function InventoryClient({ role }: { role: string }) {
 			const warehouseId = Number(adjustWarehouseId);
 			const deltaTons = Number(adjustDelta);
 			if (!warehouseId || !adjustCementType || !deltaTons) {
-				setAdjustError("warehouse, cement type, and delta required");
+				setAdjustError("warehouse, cement type, and quantity required");
 				return;
 			}
 			const res = await fetch("/api/ops/inventory/adjust", {
@@ -122,7 +144,7 @@ export function InventoryClient({ role }: { role: string }) {
 					warehouseId,
 					cementType: adjustCementType,
 					deltaTons,
-					reason: adjustReason,
+					reason: "Manual add inventory",
 				}),
 			});
 			if (!res.ok) {
@@ -132,10 +154,23 @@ export function InventoryClient({ role }: { role: string }) {
 			}
 			await refresh();
 			setAdjustDelta("");
-			setAdjustReason("");
+			setModalOpen(false);
 		} finally {
 			setAdjustBusy(false);
 		}
+	}
+
+	function openModal() {
+		setAdjustWarehouseId("");
+		setAdjustCementType("");
+		setAdjustDelta("");
+		setAdjustError(null);
+		setModalOpen(true);
+	}
+
+	function closeModal() {
+		if (adjustBusy) return;
+		setModalOpen(false);
 	}
 
 	return (
@@ -147,39 +182,14 @@ export function InventoryClient({ role }: { role: string }) {
 
 			<Card>
 				<CardHeader>
-					<CardTitle>Inventory</CardTitle>
+					<div className="flex w-full items-center gap-3">
+						<CardTitle className="flex-1">Inventory</CardTitle>
+						<Button size="sm" className="ml-auto" disabled={!canAdjust} onClick={openModal}>
+							Add Inventory
+						</Button>
+					</div>
 				</CardHeader>
 				<CardContent>
-					<div className="mb-4 rounded-lg border border-border bg-muted/30 p-3">
-						<div className="text-sm font-medium">Stock Adjustment (limited)</div>
-						{!canAdjust ? (
-							<div className="mt-1 text-xs text-muted-foreground">Read-only mode for {role}. Stock adjustments are OPERATOR-only.</div>
-						) : null}
-						<div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-4">
-							<Select options={warehouseOptions} value={adjustWarehouseId} onValueChange={setAdjustWarehouseId} disabled={!canAdjust} />
-							<Select options={cementOptions} value={adjustCementType} onValueChange={setAdjustCementType} disabled={!canAdjust} />
-							<Input
-								type="number"
-								placeholder="Delta tons (e.g. 50 or -20)"
-								value={adjustDelta}
-								onChange={(e) => setAdjustDelta(e.target.value)}
-								disabled={!canAdjust}
-							/>
-							<Input
-								placeholder="Reason"
-								value={adjustReason}
-								onChange={(e) => setAdjustReason(e.target.value)}
-								disabled={!canAdjust}
-							/>
-						</div>
-						<div className="mt-2 flex items-center gap-2">
-							<Button size="sm" variant="outline" disabled={!canAdjust || adjustBusy} onClick={submitAdjust}>
-								Apply
-							</Button>
-							{adjustError ? <div className="text-xs text-red-600">{adjustError}</div> : null}
-						</div>
-					</div>
-
 					<Table>
 						<THead>
 							<TR>
@@ -193,7 +203,7 @@ export function InventoryClient({ role }: { role: string }) {
 							</TR>
 						</THead>
 						<TBody>
-							{items.map((r) => {
+							{pagedItems.map((r) => {
 								const movements = (r.recentMovements ?? []).slice(0, 3);
 								return (
 									<TR key={`${r.warehouseId}:${r.cementType}`}>
@@ -236,7 +246,7 @@ export function InventoryClient({ role }: { role: string }) {
 									</TR>
 								);
 							})}
-							{items.length === 0 ? (
+							{pagedItems.length === 0 ? (
 								<TR>
 									<TD colSpan={7} className="py-6 text-center text-sm text-muted-foreground">
 										Tidak ada data.
@@ -245,8 +255,77 @@ export function InventoryClient({ role }: { role: string }) {
 							) : null}
 						</TBody>
 					</Table>
+
+					{items.length > pageSize ? (
+						<div className="mt-3 flex items-center justify-between">
+							<Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+								Previous
+							</Button>
+							<div className="text-xs text-muted-foreground">Page {page} of {totalPages}</div>
+							<Button size="sm" variant="outline" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))}>
+								Next
+							</Button>
+						</div>
+					) : null}
 				</CardContent>
 			</Card>
+
+			<Dialog open={modalOpen} onClose={closeModal}>
+				<DialogCard>
+					<DialogHeader>
+						<DialogTitle>Add Inventory</DialogTitle>
+					</DialogHeader>
+					<DialogBody>
+						<div className="grid grid-cols-1 gap-3">
+							<div>
+								<div className="mb-1 text-xs font-semibold text-muted-foreground">Warehouse</div>
+								<Select options={warehouseOptions} value={adjustWarehouseId} onValueChange={setAdjustWarehouseId} disabled={!canAdjust} />
+							</div>
+							<div>
+								<div className="mb-1 text-xs font-semibold text-muted-foreground">Cement Type</div>
+								<Select options={cementOptions} value={adjustCementType} onValueChange={setAdjustCementType} disabled={!canAdjust} />
+							</div>
+							<div>
+								<div className="mb-1 text-xs font-semibold text-muted-foreground">Quantity to Add (Tons)</div>
+								<Input
+									type="number"
+									min="1"
+									placeholder="e.g. 150"
+									value={adjustDelta}
+									onChange={(e) => setAdjustDelta(e.target.value)}
+									disabled={!canAdjust}
+								/>
+							</div>
+							{selectedRow ? (
+								<div className="rounded-lg border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+									<div>
+										<span className="font-semibold text-foreground">Current Stock:</span> {Number(selectedRow.quantityTons).toLocaleString("id")} ton
+									</div>
+									<div>
+										<span className="font-semibold text-foreground">Max Threshold:</span> {selectedRow.thresholds?.safetyStock == null ? "—" : formatThresholdValue(selectedRow.thresholds.safetyStock)} ton
+									</div>
+									{nextQuantity != null && selectedRow.thresholds?.safetyStock != null && nextQuantity > selectedRow.thresholds.safetyStock ? (
+										<div className="mt-2 text-xs text-red-600">
+											Quantity exceeds the maximum threshold for this warehouse.
+										</div>
+									) : null}
+								</div>
+							) : (
+								<div className="text-xs text-muted-foreground">Select warehouse and cement type to see thresholds.</div>
+							)}
+							{adjustError ? <div className="text-xs text-red-600">{adjustError}</div> : null}
+						</div>
+					</DialogBody>
+					<DialogFooter>
+						<Button size="sm" variant="outline" disabled={adjustBusy} onClick={closeModal}>
+							Cancel
+						</Button>
+						<Button size="sm" variant="success" disabled={!canAdjust || adjustBusy} onClick={submitAdjust}>
+							Add Stock
+						</Button>
+					</DialogFooter>
+				</DialogCard>
+			</Dialog>
 		</div>
 	);
 }
