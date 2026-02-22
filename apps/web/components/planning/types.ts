@@ -65,6 +65,16 @@ export type SalesCorrelation = {
     region: string;
 };
 
+export type RegionGrowth = {
+    region: string;
+    growthPct: number;
+};
+
+export type DemandDriver = {
+    name: string;
+    value: number;
+};
+
 export type RiskLevel = "low" | "medium" | "high";
 
 export type Recommendation = "Highly Recommended" | "Moderate" | "Not Recommended";

@@ -133,18 +133,6 @@ const NAV_OPERATIONS_OPERATOR: NavSection = {
     ],
 };
 
-const NAV_ISSUES: NavSection = {
-    id: "issues",
-    label: "Issues",
-    items: [
-        {
-            href: "/issues",
-            label: "Issues",
-            icon: <ScrollText className="h-4 w-4" />,
-        },
-    ],
-};
-
 const NAV_DISTRIBUTOR: NavSection = {
     id: "distributor",
     label: "Distributor",
@@ -280,7 +268,7 @@ export function AppShell({ user, children }: { user: Me; children: React.ReactNo
         const byRole: Record<string, NavSection[]> = {
             SUPER_ADMIN: [NAV_DASHBOARD, NAV_PLANNING, NAV_OPERATIONS_ADMIN_MONITORING, NAV_EXECUTIVE, NAV_ADMIN],
             MANAGEMENT: [NAV_DASHBOARD, NAV_PLANNING, NAV_OPERATIONS_ADMIN_MONITORING, NAV_EXECUTIVE],
-            OPERATOR: [NAV_DASHBOARD, NAV_OPERATIONS_OPERATOR, NAV_ISSUES],
+            OPERATOR: [NAV_DASHBOARD, NAV_OPERATIONS_OPERATOR],
             DISTRIBUTOR: [NAV_DASHBOARD, NAV_DISTRIBUTOR],
         };
         const base = byRole[user.role] ?? [NAV_DASHBOARD];
