@@ -108,7 +108,7 @@ CREATE TABLE IF NOT EXISTS shipments (
   last_lng          DOUBLE PRECISION,
   last_update       TIMESTAMPTZ,
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT shipments_status_check CHECK (status IN ('SCHEDULED', 'ON_DELIVERY', 'COMPLETED', 'DELAYED'))
+  CONSTRAINT shipments_status_check CHECK (status IN ('SCHEDULED', 'ON_DELIVERY', 'COMPLETED', 'DELAYED', 'RECEIVED'))
 );
 
 CREATE INDEX IF NOT EXISTS shipments_status_idx ON shipments(status);
@@ -303,7 +303,7 @@ ALTER TABLE ops_issues
   DROP CONSTRAINT IF EXISTS ops_issues_issue_type_check;
 ALTER TABLE ops_issues
   ADD CONSTRAINT ops_issues_issue_type_check
-  CHECK (issue_type IN ('DELAY','STOCK_SHORTAGE','FLEET','OTHER'));
+  CHECK (issue_type IN ('DELAY','STOCK_SHORTAGE','FLEET','DAMAGED','OTHER'));
 
 ALTER TABLE ops_issues
   DROP CONSTRAINT IF EXISTS ops_issues_severity_check;

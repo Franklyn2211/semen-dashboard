@@ -30,6 +30,7 @@ export type DistributorInventoryResponse = {
 
 function shipmentStatusBadge(s: string) {
     if (s === "COMPLETED") return <Badge variant="success">COMPLETED</Badge>;
+    if (s === "RECEIVED") return <Badge variant="success">RECEIVED</Badge>;
     if (s === "ON_DELIVERY") return <Badge variant="default">ON DELIVERY</Badge>;
     if (s === "DELAYED") return <Badge variant="warning">DELAYED</Badge>;
     if (s === "SCHEDULED") return <Badge variant="secondary">SCHEDULED</Badge>;
@@ -66,7 +67,7 @@ export function DistributorInventoryClient({ initial }: { initial: DistributorIn
                     </CardHeader>
                     <CardContent>
                         <div className="text-2xl font-semibold">{Number(totals?.deliveredTons ?? 0).toLocaleString("id-ID")}</div>
-                        <div className="text-xs text-muted-foreground">Total ton shipment berstatus COMPLETED.</div>
+                        <div className="text-xs text-muted-foreground">Total ton shipment berstatus COMPLETED/RECEIVED.</div>
                     </CardContent>
                 </Card>
                 <Card>

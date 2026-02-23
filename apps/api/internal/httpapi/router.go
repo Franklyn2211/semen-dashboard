@@ -2,12 +2,17 @@ package httpapi
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -32,6 +37,15 @@ type App struct {
 	cfg config.Config
 }
 
+const maxUploadBytes int64 = 6 << 20
+
+func uploadsDir() string {
+	if wd, err := os.Getwd(); err == nil {
+		return filepath.Join(wd, "uploads")
+	}
+	return "uploads"
+}
+
 func NewRouter(deps Deps) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -45,6 +59,8 @@ func NewRouter(deps Deps) http.Handler {
 	})
 
 	app := &App{db: deps.DB, cfg: deps.Config}
+
+	r.Get("/uploads/{key}", app.handleServeUpload)
 
 	r.Route("/api", func(api chi.Router) {
 		api.Post("/auth/login", app.handleLogin)
@@ -104,7 +120,11 @@ func NewRouter(deps Deps) http.Handler {
 				di.Get("/inventory", app.handleDistributorInventory)
 				di.Get("/orders", app.handleDistributorOrders)
 				di.Post("/orders", app.handleDistributorCreateOrder)
+				di.Get("/issues", app.handleDistributorIssues)
+				di.Post("/issues", app.handleDistributorCreateIssue)
+				di.Post("/issues/upload", app.handleDistributorIssueUpload)
 				di.Get("/shipments", app.handleDistributorShipments)
+				di.Patch("/shipments/{id}/status", app.handleDistributorUpdateShipmentStatus)
 				di.Get("/transactions", app.handleDistributorTransactions)
 			})
 
@@ -1979,7 +1999,8 @@ func (a *App) handleOpsIssues(w http.ResponseWriter, r *http.Request) {
            i.reported_by_user_id, ru.name,
            i.reported_at,
            i.resolved_by_user_id, su.name,
-           i.resolved_at, i.resolution_notes,
+	    i.resolved_at, i.resolution_notes,
+	    i.metadata,
            i.created_at, i.updated_at
     FROM ops_issues i
     LEFT JOIN warehouses w ON w.id = i.warehouse_id
@@ -2015,6 +2036,7 @@ func (a *App) handleOpsIssues(w http.ResponseWriter, r *http.Request) {
 		var resolvedByName *string
 		var resolvedAt *time.Time
 		var resolutionNotes string
+		var metadata json.RawMessage
 		var createdAt, updatedAt time.Time
 
 		_ = rows.Scan(
@@ -2027,6 +2049,7 @@ func (a *App) handleOpsIssues(w http.ResponseWriter, r *http.Request) {
 			&reportedAt,
 			&resolvedByID, &resolvedByName,
 			&resolvedAt, &resolutionNotes,
+			&metadata,
 			&createdAt, &updatedAt,
 		)
 
@@ -2074,6 +2097,7 @@ func (a *App) handleOpsIssues(w http.ResponseWriter, r *http.Request) {
 			"resolvedBy":      resolvedBy,
 			"resolvedAt":      resolvedAt,
 			"resolutionNotes": resolutionNotes,
+			"metadata":        metadata,
 			"createdAt":       createdAt,
 			"updatedAt":       updatedAt,
 		})
@@ -2103,9 +2127,9 @@ func (a *App) handleOpsCreateIssue(w http.ResponseWriter, r *http.Request) {
 	title := strings.TrimSpace(body.Title)
 	desc := strings.TrimSpace(body.Description)
 
-	allowedType := map[string]bool{"DELAY": true, "STOCK_SHORTAGE": true, "FLEET": true, "OTHER": true}
+	allowedType := map[string]bool{"DELAY": true, "STOCK_SHORTAGE": true, "FLEET": true, "DAMAGED": true, "OTHER": true}
 	if !allowedType[issueType] {
-		writeAPIError(w, http.StatusBadRequest, "BAD_REQUEST", "issueType must be DELAY|STOCK_SHORTAGE|FLEET|OTHER")
+		writeAPIError(w, http.StatusBadRequest, "BAD_REQUEST", "issueType must be DELAY|STOCK_SHORTAGE|FLEET|DAMAGED|OTHER")
 		return
 	}
 	if severity == "" {
@@ -2708,9 +2732,9 @@ func (a *App) handleOpsUpdateShipmentStatus(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	body.Status = strings.TrimSpace(strings.ToUpper(body.Status))
-	allowed := map[string]bool{"SCHEDULED": true, "ON_DELIVERY": true, "COMPLETED": true, "DELAYED": true}
+	allowed := map[string]bool{"SCHEDULED": true, "ON_DELIVERY": true, "COMPLETED": true, "DELAYED": true, "RECEIVED": true}
 	if !allowed[body.Status] {
-		writeAPIError(w, http.StatusBadRequest, "BAD_REQUEST", "status must be SCHEDULED|ON_DELIVERY|COMPLETED|DELAYED")
+		writeAPIError(w, http.StatusBadRequest, "BAD_REQUEST", "status must be SCHEDULED|ON_DELIVERY|COMPLETED|DELAYED|RECEIVED")
 		return
 	}
 
@@ -2744,13 +2768,15 @@ func (a *App) handleOpsUpdateShipmentStatus(w http.ResponseWriter, r *http.Reque
 	// SCHEDULED -> ON_DELIVERY|DELAYED|COMPLETED
 	// ON_DELIVERY -> DELAYED|COMPLETED
 	// DELAYED -> ON_DELIVERY|COMPLETED
-	// COMPLETED -> terminal
+	// COMPLETED -> RECEIVED
+	// RECEIVED -> terminal
 	if body.Status != currentStatus {
 		allowedNext := map[string]map[string]bool{
 			"SCHEDULED":   {"ON_DELIVERY": true, "DELAYED": true, "COMPLETED": true},
 			"ON_DELIVERY": {"DELAYED": true, "COMPLETED": true},
 			"DELAYED":     {"ON_DELIVERY": true, "COMPLETED": true},
-			"COMPLETED":   {},
+			"COMPLETED":   {"RECEIVED": true},
+			"RECEIVED":    {},
 		}
 		if !allowedNext[currentStatus][body.Status] {
 			writeAPIError(w, http.StatusConflict, "INVALID_STATE", fmt.Sprintf("invalid transition %s -> %s", currentStatus, body.Status))
@@ -2801,6 +2827,8 @@ func (a *App) handleOpsUpdateShipmentStatus(w http.ResponseWriter, r *http.Reque
 		lastLat, lastLng = &ll, &lg
 		u := now
 		lastUpdate = &u
+	case "RECEIVED":
+		etaMinutes = 0
 	}
 
 	if _, err := tx.Exec(r.Context(), `
@@ -3937,12 +3965,12 @@ func (a *App) handleDistributorInventory(w http.ResponseWriter, r *http.Request)
 
 	byType := []map[string]any{}
 	rows, err := a.db.Query(r.Context(), `
-    SELECT cement_type, COALESCE(SUM(quantity_tons),0) AS delivered
-    FROM shipments
-    WHERE to_distributor_id=$1 AND status='COMPLETED'
-    GROUP BY cement_type
-    ORDER BY cement_type
-  `, distributorID)
+		SELECT cement_type, COALESCE(SUM(quantity_tons),0) AS delivered
+		FROM shipments
+		WHERE to_distributor_id=$1 AND status IN ('COMPLETED','RECEIVED')
+		GROUP BY cement_type
+		ORDER BY cement_type
+	`, distributorID)
 	if err == nil {
 		for rows.Next() {
 			var ct string
@@ -3955,10 +3983,10 @@ func (a *App) handleDistributorInventory(w http.ResponseWriter, r *http.Request)
 
 	var deliveredTotal float64
 	_ = a.db.QueryRow(r.Context(), `
-    SELECT COALESCE(SUM(quantity_tons),0)
-    FROM shipments
-    WHERE to_distributor_id=$1 AND status='COMPLETED'
-  `, distributorID).Scan(&deliveredTotal)
+		SELECT COALESCE(SUM(quantity_tons),0)
+		FROM shipments
+		WHERE to_distributor_id=$1 AND status IN ('COMPLETED','RECEIVED')
+	`, distributorID).Scan(&deliveredTotal)
 
 	var soldTotal float64
 	_ = a.db.QueryRow(r.Context(), `
@@ -4013,7 +4041,7 @@ func (a *App) handleDistributorInventory(w http.ResponseWriter, r *http.Request)
 			"deliveredTons":       deliveredTotal,
 			"soldTons":            soldTotal,
 			"estimatedOnHandTons": estimatedOnHand,
-			"note":                "Inventory distributor dihitung estimasi: total shipment COMPLETED - total sales_orders.",
+			"note":                "Inventory distributor dihitung estimasi: total shipment COMPLETED/RECEIVED - total sales_orders.",
 		},
 		"deliveredByCementType": byType,
 		"recentShipments":       recentShipments,
@@ -4110,6 +4138,280 @@ func (a *App) handleDistributorCreateOrder(w http.ResponseWriter, r *http.Reques
 	}
 	a.insertAuditLog(r, u, "DISTRIBUTOR_ORDER_CREATED", "order_requests", fmt.Sprintf("%d", id), map[string]any{"distributorId": distributorID, "cementType": body.CementType, "quantityTons": body.QuantityTons})
 	writeJSON(w, http.StatusCreated, map[string]any{"id": id, "requestedAt": requestedAt})
+}
+
+func (a *App) handleDistributorIssues(w http.ResponseWriter, r *http.Request) {
+	_, distributorID, ok := a.requireDistributorID(w, r)
+	if !ok {
+		return
+	}
+	status := strings.TrimSpace(strings.ToUpper(r.URL.Query().Get("status")))
+	where := "WHERE i.distributor_id=$1"
+	args := []any{distributorID}
+	if status != "" && status != "ALL" {
+		where += " AND i.status=$2"
+		args = append(args, status)
+	}
+
+	q := fmt.Sprintf(`
+    SELECT i.id, i.issue_type, i.severity, i.status,
+           i.title, i.description,
+           i.shipment_id,
+           i.reported_at,
+           i.resolved_at, i.resolution_notes,
+           i.metadata
+    FROM ops_issues i
+    %s
+    ORDER BY i.created_at DESC, i.id DESC
+    LIMIT 200
+  `, where)
+
+	rows, err := a.db.Query(r.Context(), q, args...)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "INTERNAL", "db error")
+		return
+	}
+	defer rows.Close()
+	items := []map[string]any{}
+	for rows.Next() {
+		var id int64
+		var it, sev, st string
+		var title, desc string
+		var shipmentID *int64
+		var reportedAt time.Time
+		var resolvedAt *time.Time
+		var resolutionNotes string
+		var metadata json.RawMessage
+		_ = rows.Scan(&id, &it, &sev, &st, &title, &desc, &shipmentID, &reportedAt, &resolvedAt, &resolutionNotes, &metadata)
+		items = append(items, map[string]any{
+			"id":              id,
+			"issueType":       it,
+			"severity":        sev,
+			"status":          st,
+			"title":           title,
+			"description":     desc,
+			"shipmentId":      shipmentID,
+			"reportedAt":      reportedAt,
+			"resolvedAt":      resolvedAt,
+			"resolutionNotes": resolutionNotes,
+			"metadata":        metadata,
+		})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (a *App) handleDistributorUpdateShipmentStatus(w http.ResponseWriter, r *http.Request) {
+	_, distributorID, ok := a.requireDistributorID(w, r)
+	if !ok {
+		return
+	}
+	idStr := chi.URLParam(r, "id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid id")
+		return
+	}
+	var body struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid json")
+		return
+	}
+	body.Status = strings.TrimSpace(strings.ToUpper(body.Status))
+	if body.Status != "RECEIVED" {
+		writeAPIError(w, http.StatusBadRequest, "BAD_REQUEST", "status must be RECEIVED")
+		return
+	}
+
+	var currentStatus string
+	if err := a.db.QueryRow(r.Context(), `
+    SELECT status
+    FROM shipments
+    WHERE id=$1 AND to_distributor_id=$2
+  `, id, distributorID).Scan(&currentStatus); err != nil {
+		writeAPIError(w, http.StatusNotFound, "NOT_FOUND", "shipment not found")
+		return
+	}
+	if currentStatus == "RECEIVED" {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": currentStatus})
+		return
+	}
+	if currentStatus != "COMPLETED" {
+		writeAPIError(w, http.StatusConflict, "INVALID_STATE", "shipment must be COMPLETED before RECEIVED")
+		return
+	}
+
+	if _, err := a.db.Exec(r.Context(), `
+    UPDATE shipments SET status='RECEIVED', updated_at=now() WHERE id=$1
+  `, id); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "INTERNAL", "db error")
+		return
+	}
+	u, _ := r.Context().Value(ctxUserKey).(User)
+	a.insertAuditLog(r, &u, "SHIPMENT_STATUS_UPDATED", "shipment", fmt.Sprintf("%d", id), map[string]any{"status": "RECEIVED"})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "status": "RECEIVED"})
+}
+
+func (a *App) handleDistributorIssueUpload(w http.ResponseWriter, r *http.Request) {
+	_, _, ok := a.requireDistributorID(w, r)
+	if !ok {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadBytes)
+	if err := r.ParseMultipartForm(maxUploadBytes); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid multipart form")
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		writeAPIError(w, http.StatusBadRequest, "BAD_REQUEST", "file required")
+		return
+	}
+	defer file.Close()
+
+	buf := make([]byte, 512)
+	n, _ := file.Read(buf)
+	contentType := http.DetectContentType(buf[:n])
+	allowedTypes := map[string]bool{"image/jpeg": true, "image/png": true, "image/webp": true}
+	if !allowedTypes[contentType] {
+		writeAPIError(w, http.StatusBadRequest, "BAD_REQUEST", "file must be jpg, png, or webp")
+		return
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "INTERNAL", "file error")
+		return
+	}
+
+	ext := strings.ToLower(filepath.Ext(header.Filename))
+	if ext == "" {
+		switch contentType {
+		case "image/jpeg":
+			ext = ".jpg"
+		case "image/png":
+			ext = ".png"
+		case "image/webp":
+			ext = ".webp"
+		}
+	}
+	key := make([]byte, 12)
+	_, _ = rand.Read(key)
+	name := fmt.Sprintf("issue-%s%s", hex.EncodeToString(key), ext)
+
+	if err := os.MkdirAll(uploadsDir(), 0755); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "INTERNAL", "upload dir error")
+		return
+	}
+	path := filepath.Join(uploadsDir(), name)
+	out, err := os.Create(path)
+	if err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "INTERNAL", "file write error")
+		return
+	}
+	defer out.Close()
+	if _, err := io.Copy(out, file); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "INTERNAL", "file write error")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"url": "/uploads/" + name,
+	})
+}
+
+func (a *App) handleServeUpload(w http.ResponseWriter, r *http.Request) {
+	key := chi.URLParam(r, "key")
+	key = filepath.Base(strings.TrimSpace(key))
+	if key == "" {
+		writeAPIError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid file")
+		return
+	}
+	path := filepath.Join(uploadsDir(), key)
+	if _, err := os.Stat(path); err != nil {
+		writeAPIError(w, http.StatusNotFound, "NOT_FOUND", "file not found")
+		return
+	}
+	http.ServeFile(w, r, path)
+}
+
+func (a *App) handleDistributorCreateIssue(w http.ResponseWriter, r *http.Request) {
+	u, distributorID, ok := a.requireDistributorID(w, r)
+	if !ok {
+		return
+	}
+
+	var body struct {
+		Severity    string         `json:"severity"`
+		Title       string         `json:"title"`
+		Description string         `json:"description"`
+		ShipmentID  *int64         `json:"shipmentId"`
+		Metadata    map[string]any `json:"metadata"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeAPIError(w, http.StatusBadRequest, "BAD_REQUEST", "invalid json")
+		return
+	}
+	severity := strings.TrimSpace(strings.ToUpper(body.Severity))
+	if severity == "" {
+		severity = "MED"
+	}
+	allowedSev := map[string]bool{"LOW": true, "MED": true, "HIGH": true}
+	if !allowedSev[severity] {
+		writeAPIError(w, http.StatusBadRequest, "BAD_REQUEST", "severity must be LOW|MED|HIGH")
+		return
+	}
+	title := strings.TrimSpace(body.Title)
+	desc := strings.TrimSpace(body.Description)
+	if title == "" {
+		writeAPIError(w, http.StatusBadRequest, "BAD_REQUEST", "title required")
+		return
+	}
+	if body.ShipmentID != nil && *body.ShipmentID <= 0 {
+		writeAPIError(w, http.StatusBadRequest, "BAD_REQUEST", "shipmentId must be positive")
+		return
+	}
+	if body.ShipmentID != nil {
+		var exists bool
+		_ = a.db.QueryRow(r.Context(), `
+      SELECT EXISTS(
+        SELECT 1 FROM shipments WHERE id=$1 AND to_distributor_id=$2
+      )
+    `, *body.ShipmentID, distributorID).Scan(&exists)
+		if !exists {
+			writeAPIError(w, http.StatusNotFound, "NOT_FOUND", "shipment not found")
+			return
+		}
+	}
+	if body.Metadata == nil {
+		body.Metadata = map[string]any{}
+	}
+	metaBytes, _ := json.Marshal(body.Metadata)
+
+	var id int64
+	if err := a.db.QueryRow(r.Context(), `
+    INSERT INTO ops_issues (
+      issue_type, severity, status,
+      title, description,
+      shipment_id, distributor_id,
+      reported_by_user_id, reported_at,
+      resolution_notes,
+      metadata,
+      created_at, updated_at
+    )
+    VALUES ('DAMAGED',$1,'OPEN',$2,$3,$4,$5,$6,now(),'',$7,now(),now())
+    RETURNING id
+  `, severity, title, desc, body.ShipmentID, distributorID, u.ID, metaBytes).Scan(&id); err != nil {
+		writeAPIError(w, http.StatusInternalServerError, "INTERNAL", "db error")
+		return
+	}
+
+	a.insertAuditLog(r, u, "DISTRIBUTOR_ISSUE_REPORTED", "issue", fmt.Sprintf("%d", id), map[string]any{
+		"issueType":     "DAMAGED",
+		"shipmentId":    body.ShipmentID,
+		"distributorId": distributorID,
+	})
+
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": id})
 }
 
 func (a *App) handleDistributorShipments(w http.ResponseWriter, r *http.Request) {

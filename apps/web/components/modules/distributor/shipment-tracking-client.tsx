@@ -20,6 +20,7 @@ export type DistributorShipmentItem = {
 
 function statusBadge(s: string) {
     if (s === "COMPLETED") return <Badge variant="success">COMPLETED</Badge>;
+    if (s === "RECEIVED") return <Badge variant="success">RECEIVED</Badge>;
     if (s === "ON_DELIVERY") return <Badge variant="default">ON DELIVERY</Badge>;
     if (s === "DELAYED") return <Badge variant="warning">DELAYED</Badge>;
     if (s === "SCHEDULED") return <Badge variant="secondary">SCHEDULED</Badge>;
@@ -28,6 +29,8 @@ function statusBadge(s: string) {
 
 export function DistributorShipmentTrackingClient({ initial }: { initial: DistributorShipmentItem[] }) {
     const [items, setItems] = useState<DistributorShipmentItem[]>(initial);
+    const [busyId, setBusyId] = useState<number | null>(null);
+    const [error, setError] = useState<string | null>(null);
 
     const refresh = useCallback(async () => {
         try {
@@ -38,6 +41,26 @@ export function DistributorShipmentTrackingClient({ initial }: { initial: Distri
             setItems([]);
         }
     }, []);
+
+    const markReceived = useCallback(async (id: number) => {
+        setBusyId(id);
+        setError(null);
+        try {
+            const res = await fetch(`/api/distributor/shipments/${id}/status`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ status: "RECEIVED" }),
+            });
+            if (!res.ok) {
+                const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
+                setError(body?.error?.message ?? "Gagal update status.");
+                return;
+            }
+            await refresh();
+        } finally {
+            setBusyId(null);
+        }
+    }, [refresh]);
 
     return (
         <div className="space-y-6">
@@ -62,6 +85,7 @@ export function DistributorShipmentTrackingClient({ initial }: { initial: Distri
                                 <TH>From</TH>
                                 <TH>Depart</TH>
                                 <TH>ETA</TH>
+                                <TH>Action</TH>
                             </TR>
                         </THead>
                         <TBody>
@@ -78,17 +102,28 @@ export function DistributorShipmentTrackingClient({ initial }: { initial: Distri
                                     <TD className="text-xs text-muted-foreground">
                                         {s.arriveEta ? new Date(s.arriveEta).toLocaleString("id-ID") : s.etaMinutes ? `${s.etaMinutes} min` : "—"}
                                     </TD>
+                                    <TD>
+                                        <Button
+                                            size="xs"
+                                            variant="outline"
+                                            disabled={s.status !== "COMPLETED" || busyId === s.id}
+                                            onClick={() => markReceived(s.id)}
+                                        >
+                                            Mark received
+                                        </Button>
+                                    </TD>
                                 </TR>
                             ))}
                             {items.length === 0 ? (
                                 <TR>
-                                    <TD colSpan={7} className="py-6 text-center text-sm text-muted-foreground">
+                                    <TD colSpan={8} className="py-6 text-center text-sm text-muted-foreground">
                                         Tidak ada shipment.
                                     </TD>
                                 </TR>
                             ) : null}
                         </TBody>
                     </Table>
+                    {error ? <div className="mt-2 text-xs text-red-600">{error}</div> : null}
                 </CardContent>
             </Card>
         </div>

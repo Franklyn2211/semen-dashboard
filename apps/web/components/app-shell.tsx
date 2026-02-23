@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import {
+    AlertTriangle,
     Bell,
     Boxes,
     ClipboardList,
@@ -89,6 +90,11 @@ const NAV_OPERATIONS_ADMIN_MONITORING: NavSection = {
             icon: <Truck className="h-4 w-4" />,
         },
         {
+            href: "/operations/issues",
+            label: "Damage Reports",
+            icon: <AlertTriangle className="h-4 w-4" />,
+        },
+        {
             href: "/operations/inventory",
             label: "All Inventory",
             icon: <Boxes className="h-4 w-4" />,
@@ -126,6 +132,11 @@ const NAV_OPERATIONS_OPERATOR: NavSection = {
             icon: <Truck className="h-4 w-4" />,
         },
         {
+            href: "/operations/issues",
+            label: "Damage Reports",
+            icon: <AlertTriangle className="h-4 w-4" />,
+        },
+        {
             href: "/operations/logistics-map",
             label: "Live Logistic",
             icon: <Map className="h-4 w-4" />,
@@ -161,6 +172,11 @@ const NAV_DISTRIBUTOR: NavSection = {
             href: "/distributor/transactions",
             label: "Transaction History",
             icon: <LineChart className="h-4 w-4" />,
+        },
+        {
+            href: "/distributor/product-report",
+            label: "Product Report",
+            icon: <AlertTriangle className="h-4 w-4" />,
         },
     ],
 };

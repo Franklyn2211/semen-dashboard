@@ -35,6 +35,7 @@ type ShipmentDetail = {
 
 function statusBadge(s: string) {
     if (s === "COMPLETED") return <Badge variant="success">COMPLETED</Badge>;
+    if (s === "RECEIVED") return <Badge variant="success">RECEIVED</Badge>;
     if (s === "ON_DELIVERY") return <Badge variant="default">ON DELIVERY</Badge>;
     if (s === "DELAYED") return <Badge variant="warning">DELAYED</Badge>;
     if (s === "SCHEDULED") return <Badge variant="secondary">SCHEDULED</Badge>;

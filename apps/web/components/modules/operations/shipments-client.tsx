@@ -49,6 +49,7 @@ type PatchShipmentPayload = {
 
 function statusBadge(s: string) {
     if (s === "COMPLETED") return <Badge variant="success">COMPLETED</Badge>;
+    if (s === "RECEIVED") return <Badge variant="success">RECEIVED</Badge>;
     if (s === "ON_DELIVERY") return <Badge variant="default">ON DELIVERY</Badge>;
     if (s === "DELAYED") return <Badge variant="warning">DELAYED</Badge>;
     if (s === "SCHEDULED") return <Badge variant="secondary">SCHEDULED</Badge>;
@@ -152,6 +153,7 @@ export function ShipmentsClient({ role }: { role: string }) {
             { value: "ON_DELIVERY", label: "ON_DELIVERY" },
             { value: "DELAYED", label: "DELAYED" },
             { value: "COMPLETED", label: "COMPLETED" },
+            { value: "RECEIVED", label: "RECEIVED" },
             { value: "CANCELLED", label: "CANCELLED" },
         ],
         [],
@@ -193,7 +195,8 @@ export function ShipmentsClient({ role }: { role: string }) {
             SCHEDULED: { ON_DELIVERY: true, DELAYED: true, COMPLETED: true },
             ON_DELIVERY: { DELAYED: true, COMPLETED: true },
             DELAYED: { ON_DELIVERY: true, COMPLETED: true },
-            COMPLETED: {},
+            COMPLETED: { RECEIVED: true },
+            RECEIVED: {},
         };
         return Boolean(allowedNext[from]?.[to]);
     };
@@ -390,11 +393,11 @@ export function ShipmentsClient({ role }: { role: string }) {
                                     <div className="space-y-1">
                                         <div className="text-xs font-semibold text-muted-foreground">Lifecycle</div>
                                         <div className="flex flex-wrap gap-1.5">
-                                            {["SCHEDULED", "ON_DELIVERY", "DELAYED", "COMPLETED"].map((s) => (
+                                            {["SCHEDULED", "ON_DELIVERY", "DELAYED", "COMPLETED", "RECEIVED"].map((s) => (
                                                 <Button
                                                     key={s}
                                                     size="xs"
-                                                    variant={detail.status === s ? (s === "COMPLETED" ? "success" : s === "DELAYED" ? "danger" : "default") : "outline"}
+                                                    variant={detail.status === s ? (s === "COMPLETED" || s === "RECEIVED" ? "success" : s === "DELAYED" ? "danger" : "default") : "outline"}
                                                     disabled={!canEdit || busy || detail.status === s || !canTransition(detail.status, s)}
                                                     onClick={() => updateStatus(s)}
                                                 >

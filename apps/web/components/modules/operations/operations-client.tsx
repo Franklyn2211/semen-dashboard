@@ -229,6 +229,7 @@ export function OperationsClient() {
 
     const statusBadge = (s: string) => {
         if (s === "COMPLETED") return <Badge variant="success">COMPLETED</Badge>;
+        if (s === "RECEIVED") return <Badge variant="success">RECEIVED</Badge>;
         if (s === "ON_DELIVERY") return <Badge variant="default">ON DELIVERY</Badge>;
         if (s === "DELAYED") return <Badge variant="warning">DELAYED</Badge>;
         if (s === "SCHEDULED") return <Badge variant="secondary">SCHEDULED</Badge>;
@@ -242,7 +243,8 @@ export function OperationsClient() {
             SCHEDULED: { ON_DELIVERY: true, DELAYED: true, COMPLETED: true },
             ON_DELIVERY: { DELAYED: true, COMPLETED: true },
             DELAYED: { ON_DELIVERY: true, COMPLETED: true },
-            COMPLETED: {},
+            COMPLETED: { RECEIVED: true },
+            RECEIVED: {},
         };
         return Boolean(allowedNext[from]?.[to]);
     };
@@ -432,13 +434,13 @@ export function OperationsClient() {
                                         {statusBadge(selectedShipment.status)}
                                     </div>
                                     <div className="flex flex-wrap gap-1.5">
-                                        {["SCHEDULED", "ON_DELIVERY", "DELAYED", "COMPLETED"].map((s) => (
+                                        {["SCHEDULED", "ON_DELIVERY", "DELAYED", "COMPLETED", "RECEIVED"].map((s) => (
                                             <Button
                                                 key={s}
                                                 size="xs"
                                                 variant={
                                                     selectedShipment.status === s
-                                                        ? s === "COMPLETED" ? "success" : s === "DELAYED" ? "danger" : "default"
+                                                        ? s === "COMPLETED" || s === "RECEIVED" ? "success" : s === "DELAYED" ? "danger" : "default"
                                                         : "outline"
                                                 }
                                                 disabled={statusBusy || selectedShipment.status === s || !canTransition(selectedShipment.status, s)}

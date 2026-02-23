@@ -58,6 +58,17 @@ type ShipmentDetail = {
     truck: { id: number | null; code: string | null; name: string | null };
 };
 
+type IssueItem = {
+    id: number;
+    issueType: string;
+    severity: string;
+    status: string;
+    title: string;
+    shipmentId: number | null;
+    distributor?: { id?: number | null; name?: string | null };
+    reportedAt: string;
+};
+
 const num = (v: unknown) => (typeof v === "number" ? v : Number(v ?? 0));
 
 export function OpsOverviewClient() {
@@ -68,6 +79,7 @@ export function OpsOverviewClient() {
     const [shipments, setShipments] = useState<ShipmentRow[]>([]);
     const [selectedShipmentId, setSelectedShipmentId] = useState<number | null>(null);
     const [shipmentDetail, setShipmentDetail] = useState<ShipmentDetail | null>(null);
+    const [issues, setIssues] = useState<IssueItem[]>([]);
 
     useEffect(() => {
         fetch("/api/ops/overview")
@@ -97,6 +109,11 @@ export function OpsOverviewClient() {
             .then((r) => r.json())
             .then((d) => setShipments((d.items ?? []) as ShipmentRow[]))
             .catch(() => setShipments([]));
+
+        fetch("/api/ops/issues?type=DAMAGED&status=OPEN")
+            .then((r) => r.json())
+            .then((d) => setIssues(((d.items ?? []) as IssueItem[]).slice(0, 5)))
+            .catch(() => setIssues([]));
     }, []);
 
     useEffect(() => {
@@ -124,6 +141,13 @@ export function OpsOverviewClient() {
             })
             .filter((v): v is { id: number; status: string; from: { lat: number; lng: number }; to: { lat: number; lng: number } } => v !== null);
     }, [logistics, shipments]);
+
+    const severityBadge = (s: string) => {
+        if (s === "HIGH") return <Badge variant="danger">HIGH</Badge>;
+        if (s === "MED") return <Badge variant="warning">MED</Badge>;
+        if (s === "LOW") return <Badge variant="secondary">LOW</Badge>;
+        return <Badge variant="secondary">{s || "—"}</Badge>;
+    };
 
     return (
         <div className="space-y-6">
@@ -173,23 +197,13 @@ export function OpsOverviewClient() {
                 </Card>
                 <Card>
                     <CardHeader>
-                        <CardTitle className="text-sm">Min Stock Alerts</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="text-2xl font-bold">{data ? data.minStockAlerts : "—"}</div>
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="text-sm">Shipment Delays</CardTitle>
+                        <CardTitle className="text-sm">Damage Reports (Open)</CardTitle>
                     </CardHeader>
                     <CardContent className="flex items-center justify-between gap-2">
-                        <div className="text-2xl font-bold">{data ? data.delayedShipments : "—"}</div>
-                        {data ? (
-                            <Badge variant={data.delayedShipments > 0 ? "warning" : "secondary"}>
-                                {data.delayedShipments > 0 ? "ATTENTION" : "OK"}
-                            </Badge>
-                        ) : null}
+                        <div className="text-2xl font-bold">{issues.length}</div>
+                        <Badge variant={issues.length > 0 ? "warning" : "secondary"}>
+                            {issues.length > 0 ? "ATTENTION" : "OK"}
+                        </Badge>
                     </CardContent>
                 </Card>
             </div>
@@ -297,6 +311,60 @@ export function OpsOverviewClient() {
                         <Button variant="outline" size="sm" onClick={() => router.push("/operations/orders")}>
                             View More
                         </Button>
+                    </div>
+                </CardContent>
+            </Card>
+
+            <Card>
+                <CardHeader>
+                    <CardTitle>Damage Reports (Distributor)</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                    <div className="overflow-hidden rounded-lg border border-border">
+                        <Table>
+                            <THead>
+                                <TR>
+                                    <TH>ID</TH>
+                                    <TH>Distributor</TH>
+                                    <TH>Shipment</TH>
+                                    <TH>Severity</TH>
+                                    <TH>Reported</TH>
+                                    <TH>Status</TH>
+                                    <TH>Action</TH>
+                                </TR>
+                            </THead>
+                            <TBody>
+                                {issues.map((issue) => (
+                                    <TR key={issue.id}>
+                                        <TD className="font-medium">#{issue.id}</TD>
+                                        <TD className="text-xs">{issue.distributor?.name ?? "—"}</TD>
+                                        <TD className="text-xs">{issue.shipmentId ? `#${issue.shipmentId}` : "—"}</TD>
+                                        <TD>{severityBadge(issue.severity)}</TD>
+                                        <TD className="text-xs">{issue.reportedAt ? new Date(issue.reportedAt).toLocaleString("id-ID") : "—"}</TD>
+                                        <TD><Badge variant="secondary">{issue.status}</Badge></TD>
+                                        <TD>
+                                            <Button
+                                                size="xs"
+                                                variant="outline"
+                                                onClick={() => router.push(`/operations/issues?issueId=${issue.id}`)}
+                                            >
+                                                Open
+                                            </Button>
+                                        </TD>
+                                    </TR>
+                                ))}
+                                {issues.length === 0 ? (
+                                    <TR>
+                                        <TD colSpan={7} className="py-6 text-center text-sm text-muted-foreground">
+                                            Tidak ada laporan kerusakan terbuka.
+                                        </TD>
+                                    </TR>
+                                ) : null}
+                            </TBody>
+                        </Table>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                        Laporan ini dibuat oleh distributor dan ditindaklanjuti operator.
                     </div>
                 </CardContent>
             </Card>
