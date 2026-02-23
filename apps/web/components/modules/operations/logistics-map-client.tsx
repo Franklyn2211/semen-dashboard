@@ -28,7 +28,7 @@ type ShipmentDetail = {
     id: number;
     status: string;
     etaMinutes: number;
-    truck: { lastLat: number | null; lastLng: number | null; lastUpdate: string | null };
+    truck?: { lastLat: number | null; lastLng: number | null; lastUpdate: string | null } | null;
     fromWarehouse: { id: number; name: string; lat: number; lng: number };
     toDistributor: { id: number; name: string; lat: number; lng: number };
 };
@@ -134,7 +134,7 @@ export function LogisticsMapClient() {
                             </div>
                             {detail ? (
                                 <div className="mt-3 text-xs text-muted-foreground">
-                                    Selected shipment #{detail.id} · Last update: {detail.truck.lastUpdate ? new Date(detail.truck.lastUpdate).toLocaleString("id-ID") : "—"}
+                                    Selected shipment #{detail.id} · Last update: {detail.truck?.lastUpdate ? new Date(detail.truck.lastUpdate).toLocaleString("id-ID") : "—"}
                                 </div>
                             ) : null}
                         </CardContent>
