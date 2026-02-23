@@ -333,8 +333,8 @@ function ShipmentsTable({
                             ) : null}
                         </TBody>
                     </Table>
+                </div>
                 </CardContent>
             </Card>
-        </div>
     );
 }
