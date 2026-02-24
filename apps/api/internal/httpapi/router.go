@@ -6,8 +6,10 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net"
 	"net/http"
@@ -216,6 +218,29 @@ func writeAPIError(w http.ResponseWriter, status int, code, message string) {
 	e.Error.Code = code
 	e.Error.Message = message
 	writeJSON(w, status, e)
+}
+
+func writeDBError(w http.ResponseWriter, err error) {
+	// Keep client-facing messages high-level, but make the most common setup issues actionable.
+	// Always log the underlying error for local debugging.
+	log.Printf("db error: %v", err)
+
+	message := "db error"
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		switch pgErr.Code {
+		case "42P01": // undefined_table
+			message = "db schema out of date (missing table). Restart API to run migrations."
+		case "23503": // foreign_key_violation
+			message = "db error (invalid reference)"
+		case "23505": // unique_violation
+			message = "db error (duplicate value)"
+		case "23514": // check_violation
+			message = "db error (invalid value)"
+		}
+	}
+
+	writeAPIError(w, http.StatusInternalServerError, "INTERNAL", message)
 }
 
 // ---------- auth ----------
@@ -1345,7 +1370,7 @@ func (a *App) handleOpsOrders(w http.ResponseWriter, r *http.Request) {
   `, where)
 	rows, err := a.db.Query(r.Context(), q, args...)
 	if err != nil {
-		writeAPIError(w, http.StatusInternalServerError, "INTERNAL", "db error")
+		writeDBError(w, err)
 		return
 	}
 	defer rows.Close()
@@ -4401,7 +4426,7 @@ func (a *App) handleDistributorCreateIssue(w http.ResponseWriter, r *http.Reques
     VALUES ('DAMAGED',$1,'OPEN',$2,$3,$4,$5,$6,now(),'',$7,now(),now())
     RETURNING id
   `, severity, title, desc, body.ShipmentID, distributorID, u.ID, metaBytes).Scan(&id); err != nil {
-		writeAPIError(w, http.StatusInternalServerError, "INTERNAL", "db error")
+		writeDBError(w, err)
 		return
 	}
 
